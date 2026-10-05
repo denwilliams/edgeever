@@ -296,12 +296,12 @@ describe("shared companion MCP adapter", () => {
     expect(definition.inputSchema.properties.kind.enum).toEqual(["architecture"]);
     expect(definition.inputSchema.required ?? []).not.toContain("notebookId");
     expect(definition.description).toContain("use exactly that kind");
-    expect(definition.description).toContain("等待分类");
+    expect(definition.description).toContain("inbox");
     const plain = companionToolDefinitions(f.input);
     for (const name of ["create_memo", "create_diagram_memo", "create_infographic_memo", "use_note_template"]) {
       const tool = plain.find(item => item.name === name);
       expect(tool.inputSchema.required ?? []).not.toContain("notebookId");
-      expect(tool.description).toContain("等待分类");
+      expect(tool.description).toContain("inbox");
     }
     expect(plain.find(item => item.name === "ask_user_question").description).toContain("Do not use this to choose a notebook");
 
@@ -406,7 +406,7 @@ describe("shared companion MCP adapter", () => {
     const blocked = await tools.ask_user_question.execute({
       questions: [{ id: "notebook", prompt: "流程图要保存到哪个笔记本？请提供笔记本名称。", inputType: "free_text" }],
     });
-    expect(blocked).toMatchObject({ waiting: false, error: expect.stringContaining("等待分类") });
+    expect(blocked).toMatchObject({ waiting: false, error: expect.stringContaining("inbox") });
     expect(run.pause.ask).toBe(false);
     expect(run.questions).toEqual([]);
     const allowed = await tools.ask_user_question.execute({
