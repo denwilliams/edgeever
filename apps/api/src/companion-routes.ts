@@ -38,7 +38,11 @@ export const companionGenerationFailure = (error: unknown): { code: string } => 
   if (status === 401 || status === 403) return { code: "ai_credentials_rejected" };
   if (status === 402) return { code: "ai_provider_payment_required" };
   if (status === 429) return { code: "ai_provider_rate_limited" };
-  if (status === 400) return { code: "ai_provider_request_rejected" };
+  if (status === 400) {
+    const detail = typeof record?.responseBody === "string" ? record.responseBody : record?.message;
+    console.error("companion_provider_rejected", String(detail ?? "").slice(0, 500));
+    return { code: "ai_provider_request_rejected" };
+  }
   return { code: "companion_generation_failed" };
 };
 
