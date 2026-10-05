@@ -268,7 +268,10 @@ export const buildAiDirectProviderRequest = (
     },
     body: JSON.stringify({
       model: prepared.modelId,
-      max_tokens: prepared.maxOutputTokens,
+      // OpenAI's newer models reject max_tokens; other compatible backends may still require it.
+      ...(/^https:\/\/api\.openai\.com(\/|$)/i.test(baseUrl)
+        ? { max_completion_tokens: prepared.maxOutputTokens }
+        : { max_tokens: prepared.maxOutputTokens }),
       stream: true,
       messages: [
         { role: "system", content: prepared.system },
