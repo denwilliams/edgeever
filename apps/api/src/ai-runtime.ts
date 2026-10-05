@@ -16,6 +16,32 @@ export const openaiCompatibleHeaders = (baseUrl: string) => {
   }
 };
 
+const isOpenAiBaseUrl = (baseUrl: string) => {
+  try {
+    return new URL(baseUrl).hostname.toLowerCase() === "api.openai.com";
+  } catch {
+    return false;
+  }
+};
+
+// OpenAI's newer models reject max_tokens in favour of max_completion_tokens, but the
+// openai-compatible provider always sends max_tokens. Rewrite it for OpenAI only, since
+// other compatible backends may still require max_tokens.
+export const openAiMaxCompletionTokensFetch: typeof fetch = (input, init) => {
+  if (typeof init?.body === "string") {
+    try {
+      const body = JSON.parse(init.body);
+      if (body && typeof body === "object" && "max_tokens" in body && !("max_completion_tokens" in body)) {
+        const { max_tokens, ...rest } = body;
+        return fetch(input, { ...init, body: JSON.stringify({ ...rest, max_completion_tokens: max_tokens }) });
+      }
+    } catch {
+      // Non-JSON bodies pass through untouched.
+    }
+  }
+  return fetch(input, init);
+};
+
 export const createAiModel = (config: {
   provider: AiProvider;
   baseUrl: string;
@@ -34,6 +60,7 @@ export const createAiModel = (config: {
         apiKey: config.apiKey,
         includeUsage: true,
         headers: openaiCompatibleHeaders(config.baseUrl),
+        ...(isOpenAiBaseUrl(config.baseUrl) ? { fetch: openAiMaxCompletionTokensFetch } : {}),
       })(config.modelId);
   }
 };
