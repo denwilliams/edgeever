@@ -30,3 +30,23 @@ export const savePosterMemo = async (repository: EdgeEverRepository, memo: MemoD
     }
   }
 };
+
+// Sync acknowledgements can change hashes/previews without changing the artwork.
+export const posterMemoContent = (memo: MemoDetail) => {
+  const document = parsePosterDocument(memo.contentMarkdown);
+  if (!document) return null;
+  return JSON.stringify([memo.title ?? "", [...memo.tags].sort(), { ...document, previewResourceId: undefined }]);
+};
+
+export const classifyPosterUpdate = (incoming: MemoDetail, base: MemoDetail, dirty: boolean, saving: boolean, previousSaveBase?: MemoDetail | null) => {
+  if (saving) return "defer";
+  if (incoming.contentHash === base.contentHash && incoming.revision === base.revision) return "ignore";
+  // Parent props may still show the pre-save memo after the save has completed.
+  if (previousSaveBase && incoming.contentHash === previousSaveBase.contentHash && incoming.revision === previousSaveBase.revision) return "ignore";
+  const content = posterMemoContent(incoming);
+  if (content !== null && content === posterMemoContent(base)) return "rebase";
+  return dirty ? "conflict" : "replace";
+};
+
+export const canRestorePosterDraft = (draft: { baseHash: string; baseContent?: string }, memo: MemoDetail) =>
+  draft.baseHash === memo.contentHash || (typeof draft.baseContent === "string" && draft.baseContent === posterMemoContent(memo));

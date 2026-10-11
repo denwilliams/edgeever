@@ -24,7 +24,7 @@ export async function prepareWorkBuddyAuth(command) {
 // WorkBuddy's ACP authenticate handler ignores login() returning false and then
 // waits forever for a session. Its local account API reports that failure and
 // starts login without first logging out (which can cancel login via its watcher).
-export async function authenticateWorkBuddy({ endpoint, password }, methodId, signal, { fetchImpl = fetch, pollIntervalMs = 500 } = {}) {
+export async function authenticateWorkBuddy({ endpoint, password }, methodId, signal, { fetchImpl = fetch, pollIntervalMs = 500, readCredential } = {}) {
   const request = async (route, body) => {
     const response = await fetchImpl(`${endpoint}/api/v1/auth/account/${route}`, {
       method: body ? "POST" : "GET",
@@ -39,14 +39,19 @@ export async function authenticateWorkBuddy({ endpoint, password }, methodId, si
     return result;
   };
   const signedIn = (status) => status.authenticated === true && typeof status.account?.userId === "string" && Boolean(status.account.userId);
-  const status = await request("status");
-  if (signedIn(status)) return;
+  // A saved account can contain an expired token. An explicit login must start
+  // a new flow, and the old account must not satisfy polling while it is open.
+  if (typeof readCredential !== "function") throw new Error("workbuddy_auth_unavailable");
+  const previousCredential = await readCredential();
   const started = await request("login", { method: methodId });
   if (started.loginError || started.success !== true) throw new Error("authentication_failed");
   for (;;) {
     await delay(pollIntervalMs, undefined, { signal });
     const status = await request("status");
-    if (signedIn(status)) return;
     if (status.loginError) throw new Error("authentication_failed");
+    if (signedIn(status)) {
+      const credential = await readCredential();
+      if (credential && credential !== previousCredential) return;
+    }
   }
 }

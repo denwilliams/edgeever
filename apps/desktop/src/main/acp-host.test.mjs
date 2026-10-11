@@ -84,9 +84,9 @@ const collector = () => {
   };
 };
 
-const fakeAgentSource = ({ reportPath, secretPath, allowImage, allowEmbedded, hold, requireAuth, advertiseAuth, promptRefusal, hangAuth, hangSession, workBuddyAccountApi, workBuddyLoginFailure, authMethodId = "browser" }) => `#!/usr/bin/env bun
+const fakeAgentSource = ({ reportPath, secretPath, allowImage, allowEmbedded, hold, requireAuth, advertiseAuth, promptRefusal, hangAuth, hangSession, workBuddyAccountApi, workBuddyLoginFailure, workBuddyUnreadable, workBuddyUnreadableAfterLogin, authMethodId = "browser" }) => `#!/usr/bin/env bun
 import * as acp from ${JSON.stringify(sdkHref)};
-import { writeFileSync } from "node:fs";
+import { writeFileSync, readFileSync } from "node:fs";
 
 const reportPath = ${JSON.stringify(reportPath)};
 const secretPath = ${JSON.stringify(secretPath)};
@@ -98,6 +98,11 @@ const advertiseAuth = ${advertiseAuth ? "true" : "false"};
 const promptRefusal = ${promptRefusal ? JSON.stringify(promptRefusal) : "null"};
 let authenticated = false;
 const report = { initialize: null, newSession: null, permission: null, readError: null, readResult: null, prompt: null, authMethod: null };
+if (${workBuddyAccountApi ? "true" : "false"}) {
+  try { Object.assign(report, JSON.parse(readFileSync(reportPath, "utf8"))); authenticated = report.accountLogin === true && ${workBuddyLoginFailure ? "false" : "true"}; } catch {}
+}
+if (${workBuddyUnreadable ? "true" : "false"}) authenticated = true;
+const restoredAccount = authenticated;
 const save = () => writeFileSync(reportPath, JSON.stringify(report));
 if (${workBuddyAccountApi ? "true" : "false"}) {
   const { createServer } = await import("node:http");
@@ -164,6 +169,7 @@ acp.agent({ name: "edgeever-fake-agent" })
       authMethods: requireAuth || advertiseAuth ? [{ id: ${JSON.stringify(authMethodId)}, name: "Browser" }] : [],
     };
   })
+  .onRequest("_codebuddy.ai/getUserInfo", (params) => params, () => ({ userInfo: authenticated ? { ${workBuddyUnreadable ? 'userId: "saved-user"' : 'accessToken: "new-token"'} , ...(${workBuddyUnreadableAfterLogin ? "true" : "false"} && restoredAccount ? { accessToken: undefined, userId: "saved-user" } : {}) } : undefined }))
   .onRequest("authenticate", (ctx) => {
     report.authMethod = ctx.params.methodId;
     if (${hangAuth ? "true" : "false"}) {
@@ -415,6 +421,17 @@ describe("ACP command allow-list", () => {
       expect(international.command.args).toEqual([realpathSync(bundled), "--acp"]);
       expect(international.command.unsetEnv).toEqual(["CODEBUDDY_INTERNET_ENVIRONMENT"]);
       expect(createAcpSpawnPlan(international.command, directory).options.env.CODEBUDDY_INTERNET_ENVIRONMENT).toBeUndefined();
+      // New encrypted builds need their own native key provider, unavailable in
+      // EdgeEver's Electron. Keep the CLI and edition while changing the host.
+      const nativeHost = path.resolve(path.dirname(bundled), "../../../../MacOS/Electron");
+      await mkdir(path.dirname(nativeHost), { recursive: true });
+      await writeFile(nativeHost, "// fake WorkBuddy Electron");
+      const nativeInternational = resolveAcpCommand({ id: "workbuddyIntl" }, deps);
+      expect(nativeInternational.command.command).toBe(realpathSync(nativeHost));
+      expect(nativeInternational.command.args[0]).toEndWith("workbuddy-launch.cjs");
+      expect(nativeInternational.command.args.slice(1)).toEqual([realpathSync(bundled), "--acp"]);
+      expect(nativeInternational.command.env).toEqual({ ELECTRON_RUN_AS_NODE: "1" });
+      expect(nativeInternational.command.unsetEnv).toEqual(["CODEBUDDY_INTERNET_ENVIRONMENT"]);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
@@ -912,6 +929,34 @@ describe("ACP stdio session", () => {
       await rm(directory, { recursive: true, force: true });
     }
   }, 15_000);
+
+  sessionTest("WorkBuddy encrypted metadata cannot count as a usable connection or successful login", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "edgeever-acp-unreadable-auth-"));
+    const reportPath = path.join(directory, "report.json");
+    try {
+      const scriptPath = await writeFakeAgent(directory, { reportPath, requireAuth: true, workBuddyAccountApi: true, workBuddyUnreadable: true, authMethodId: "external" });
+      const runtime = createAcpHostRuntime({ adapterManager: { get: () => ({ command: { command: process.execPath, args: [scriptPath] } }) } });
+      expect(await runtime.probeAdapter({ id: "workbuddyIntl" })).toMatchObject({ state: "failed", detail: "workbuddy_credentials_unavailable" });
+      expect(await runtime.authenticateAdapter({ id: "workbuddyIntl", methodId: "external" })).toMatchObject({ state: "failed", detail: "workbuddy_credentials_unavailable" });
+      const events = [];
+      await runtime.prompt({ adapterId: "workbuddyIntl", prompt: "hello", noteAccess: false }, (event) => events.push(event));
+      expect(events).toMatchObject([{ type: "error", message: "workbuddy_credentials_unavailable" }]);
+      const report = await readReport(reportPath);
+      expect(report.accountLogin).toBeUndefined();
+      expect(report.newSession).toBeNull();
+    } finally { await rm(directory, { recursive: true, force: true }); }
+  }, 10_000);
+
+  sessionTest("WorkBuddy login must survive a fresh chat process before reporting success", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "edgeever-acp-auth-restore-"));
+    const reportPath = path.join(directory, "report.json");
+    try {
+      const scriptPath = await writeFakeAgent(directory, { reportPath, requireAuth: true, workBuddyAccountApi: true, workBuddyUnreadableAfterLogin: true, authMethodId: "external" });
+      const runtime = createAcpHostRuntime({ adapterManager: { get: () => ({ command: { command: process.execPath, args: [scriptPath] } }) } });
+      expect(await runtime.authenticateAdapter({ id: "workbuddyIntl", methodId: "external" })).toMatchObject({ state: "failed", detail: "workbuddy_credentials_unavailable" });
+      expect((await readReport(reportPath)).accountLogin).toBe(true);
+    } finally { await rm(directory, { recursive: true, force: true }); }
+  }, 10_000);
 
   for (const adapterId of ["workbuddyIntl", "workbuddyCn"]) for (const loginFailure of [false, true]) sessionTest(`${adapterId} account login ${loginFailure ? "returns failure without hanging" : "verifies ACP session without the broken authenticate RPC"}`, async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "edgeever-acp-workbuddy-auth-"));

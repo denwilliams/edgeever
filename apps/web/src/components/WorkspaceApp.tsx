@@ -1,3 +1,4 @@
+import { startPosterClientRenderer } from "@/lib/poster-client-render";
 import {
   lazy,
   Suspense,
@@ -118,6 +119,7 @@ import { useWorkspaceRoute } from "@/hooks/useWorkspaceRoute";
 import { useNoteProse } from "@/hooks/useNoteProse";
 import { useWorkspacePreferences } from "@/hooks/useWorkspacePreferences";
 import { useWorkspaceSelection } from "@/hooks/useWorkspaceSelection";
+import { useNotebookSelectionReconciliation } from "@/hooks/useNotebookSelectionReconciliation";
 import { useWorkspaceQueuedSync } from "@/hooks/useWorkspaceQueuedSync";
 import { useWorkspaceMemoRemoval } from "@/hooks/useWorkspaceMemoRemoval";
 import { EdgeEverPluginHost, type RegisteredPluginPanel } from "@/lib/plugins/plugin-host";
@@ -588,6 +590,14 @@ export const WorkspaceApp = ({
       queryClient.invalidateQueries({ queryKey: ["resources"], refetchType: "all" }),
     ]);
   }, [queryClient]);
+
+  useEffect(() => {
+    if (demoMode || (authRequired && !user) || isLoggingOut) return;
+    return startPosterClientRenderer(async () => {
+      await repository.sync();
+      await invalidateWorkspaceQueries();
+    }, i18n.language.startsWith("zh"));
+  }, [demoMode, authRequired, user?.id, isLoggingOut, repository, invalidateWorkspaceQueries, i18n.language]);
 
   const refreshWorkspaceFromServer = useCallback(async (mode: WorkspaceRefreshMode) => {
     if (isBrowserOffline()) {
@@ -1228,6 +1238,16 @@ export const WorkspaceApp = ({
           : t("workspaceDialogs.deleteNotebookFailed"),
       });
     },
+  });
+
+  useNotebookSelectionReconciliation({
+    notebooks: notebooksQuery.isSuccess && !notebooksQuery.isFetching && !createNotebookMutation.isPending
+      ? notebooksQuery.data.notebooks
+      : undefined,
+    selectedNotebookId,
+    setSelectedNotebookId,
+    setSelectedMemoId,
+    clearMemoSelection,
   });
 
   const revealCreatedMemo = (memo: MemoDetail) => {

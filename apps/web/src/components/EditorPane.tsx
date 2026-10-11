@@ -1,3 +1,4 @@
+import { AI_ASSISTANT_LAUNCHER_POSITION } from "@/lib/ai-assistant-launcher";
 import { useRef, useState, useEffect, useLayoutEffect, useCallback, useMemo, lazy, Suspense, type CSSProperties, type FocusEvent as ReactFocusEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useEditor, EditorContent, type Editor } from "@tiptap/react";
@@ -4586,7 +4587,7 @@ const RichEditorPane = ({
               // The phone note view already has an edit button in this corner.
               isMobileViewport && !mobileEditingActive
                 ? "bottom-[calc(4.75rem+env(safe-area-inset-bottom))] right-4"
-                : "bottom-[calc(1.25rem+env(safe-area-inset-bottom))] right-5",
+                : AI_ASSISTANT_LAUNCHER_POSITION,
             )}
             aria-label={t("aiAssistant.open")}
             onClick={openAiAssistant}

@@ -1,20 +1,20 @@
 {
-  "version": "1.108.0",
+  "version": "1.110.0",
   "changes": {
     "en-US": [
-      "Create editable poster notes with templates, bundled fonts, canvas tools, image export, and AI edits through the shared assistant. Edit posters on Web or desktop; Android and iOS display their preview and text. Saving artwork versions adds preview attachments. Update the server to protect poster content from older clients.",
-      "See desktop update download progress and more detailed update diagnostics in system information, including Windows taskbar shortcut details.",
-      "Recover WorkBuddy agent login after cancellation without leaving authentication stuck, with clearer login errors and more compact assistant alerts."
+      "AI assistants and external tools can create, find, and precisely edit editable posters, with fresh previews rendered by an online Web or desktop client; multi-section content can be arranged into structured layouts.",
+      "Double-click poster images and placeholders to replace them, or grouped text to edit it; template decorations no longer obscure titles in affected layouts.",
+      "Fix encrypted credential initialization for WorkBuddy on desktop to improve AI assistant connectivity."
     ],
     "zh-CN": [
-      "新增可编辑的海报笔记，支持模板、内置字体、画布工具、图片导出和统一助手 AI 编辑。Web 和桌面端支持编辑，Android 与 iOS 显示预览和文本。保存画布版本会增加预览附件；请同步升级服务端，以保护海报内容免受旧客户端覆盖。",
-      "桌面端新增更新下载进度显示，系统信息提供更详细的更新诊断及 Windows 任务栏快捷方式信息。",
-      "修复取消 WorkBuddy Agent 登录后认证卡住的问题，并简化登录错误提示与助手侧栏提醒。"
+      "AI 助手与外部工具可创建、查询和精细编辑可编辑海报，并由在线 Web 或桌面客户端生成新预览；多段内容可自动排成清晰的海报版式。",
+      "海报画布支持双击替换图片与占位图、编辑编组内文字，并修复部分模板装饰遮挡标题的问题。",
+      "修复桌面端 WorkBuddy 的加密凭据初始化问题，改善 AI 助手连接。"
     ],
     "ja": [
-      "編集可能なポスターノートを追加しました。テンプレート、内蔵フォント、キャンバスツール、画像書き出し、共通アシスタントによるAI編集に対応します。Webとデスクトップで編集でき、AndroidとiOSではプレビューとテキストを表示します。保存した作品の各バージョンにはプレビュー添付が追加されます。旧クライアントによる上書きを防ぐため、サーバーも更新してください。",
-      "デスクトップ更新のダウンロード進捗を表示します。システム情報には詳細な更新診断とWindowsタスクバーのショートカット情報が追加されます。",
-      "WorkBuddyエージェントのログインをキャンセルした後、認証が停止したままになる問題を修正しました。ログインエラーを分かりやすくし、アシスタントの通知をコンパクトにしました。"
+      "AI アシスタントと外部ツールで編集可能なポスターの作成・検索・詳細編集ができ、オンラインの Web またはデスクトップクライアントが新しいプレビューを生成します。複数段落の内容も整理されたレイアウトに配置できます。",
+      "ポスターの画像やプレースホルダーをダブルクリックして置き換え、グループ内の文字を編集できます。一部のテンプレートで装飾がタイトルを隠す問題も修正しました。",
+      "デスクトップ版 WorkBuddy の暗号化された認証情報の初期化を修正し、AI アシスタントの接続を改善しました。"
     ]
   }
 }
