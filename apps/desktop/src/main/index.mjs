@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, session, net, protocol, shell, dialog, safeStorage, clipboard, ClipboardItem, powerMonitor, desktopCapturer, screen } from "electron";
+import { app, BrowserWindow, Menu, Tray, globalShortcut, nativeImage, ipcMain, session, net, protocol, shell, dialog, safeStorage, clipboard, ClipboardItem, powerMonitor, desktopCapturer, screen } from "electron";
 import { createReadStream, existsSync } from "node:fs";
 import { appendFile, mkdir, open, readdir, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
@@ -31,6 +31,7 @@ import {
 import { userDataDirectoryFromArguments } from "./user-data-directory.mjs";
 import { isAllowedPrintPreviewUrl } from "./window-open-policy.mjs";
 import { showWindow } from "./window-visibility.mjs";
+import { globalShortcutAccelerator, normalizeGlobalShortcutBinding, replaceGlobalShortcut, toggleMainWindow } from "./global-shortcut.mjs";
 import { trayIconPath } from "./tray-icon.mjs";
 import { writeImageClipboard, writeRichClipboard, writeTextClipboard } from "./clipboard-write.mjs";
 import { captureScreenToNote, createScreenshotCaptureGuard, screenshotImportIpcPayload, writeScreenshotTempPath } from "./screenshot-capture.mjs";
@@ -41,11 +42,15 @@ import { createRendererStartupGuard } from "./renderer-startup-guard.mjs";
 import { waitForChildProcessSpawn } from "./child-process-start.mjs";
 import { ScheduledTaskScheduler } from "./scheduled-task-scheduler.mjs";
 import { desktopMenuCopy } from "./desktop-menu.mjs";
+import { buildEditContextMenuTemplate } from "./edit-context-menu.mjs";
 import {
   fetchTrustedWindowsUpdate,
   verifyDownloadedWindowsUpdate,
 } from "./windows-update-trust.mjs";
 import electronUpdater from "electron-updater";
+import { createUpdateDiagnostic } from "./update-diagnostics.mjs";
+import { normalizeUpdateProgress } from "./update-progress.mjs";
+import { inspectWindowsTaskbarShortcuts } from "./windows-taskbar-diagnostics.mjs";
 import { createPluginPublicNetworkRuntime } from "./plugin-public-network.mjs";
 import { createAiDirectRuntime } from "./ai-direct.mjs";
 import { createAcpHostRuntime, registerAcpIpc } from "./acp-host.mjs";
@@ -80,7 +85,7 @@ const requestedUserDataDirectory = linuxUpdateTestMode
 if (requestedUserDataDirectory) app.setPath("userData", requestedUserDataDirectory);
 
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
-const projectRoot = join(currentDirectory, "../../..");
+const projectRoot = join(currentDirectory, app.isPackaged ? "../../.." : "../../../..");
 /**
  * Force Dock to use our multi-resolution app icon. Bundle Info.plist is still
  * the primary source; this covers cases where Launch Services/Dock cache a
@@ -123,6 +128,8 @@ let sidecar;
 let tray;
 let isQuitting = false;
 let updateState = "idle";
+let updateError = null;
+let updateProgress = null;
 let updateCheckInFlight = null;
 let updateDownloadInFlight = null;
 let updateCheckTimer = null;
@@ -168,12 +175,83 @@ const updateCheckIntervalMs = 60 * 60 * 1_000;
 const updateCheckFocusThrottleMs = 15 * 60 * 1_000;
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 const windowStatePath = () => join(app.getPath("userData"), "window-state.json");
+const globalShortcutPath = () => join(app.getPath("userData"), "global-shortcut.json");
 const instanceUrlPath = () => join(app.getPath("userData"), "instance-url");
 const sessionTokenPath = () => join(app.getPath("userData"), "session-token");
 const crashMarkerPath = () => join(app.getPath("userData"), "last-session-active");
 const installationMarkerPath = () => join(app.getPath("userData"), "installation-confirmed");
 const logPath = () => join(app.getPath("userData"), "logs", "desktop.log");
 let desktopSessionToken = "";
+let configuredGlobalShortcut = null;
+let registeredGlobalShortcut = null;
+let globalShortcutUpdate = Promise.resolve();
+const globalShortcutState = () => ({
+  binding: configuredGlobalShortcut,
+  registered: Boolean(registeredGlobalShortcut && globalShortcut.isRegistered(globalShortcutAccelerator(registeredGlobalShortcut))),
+});
+const persistGlobalShortcut = async (binding) => {
+  const temporaryPath = `${globalShortcutPath()}.tmp`;
+  try {
+    await writeFile(temporaryPath, JSON.stringify({ binding }), { mode: 0o600 });
+    await rename(temporaryPath, globalShortcutPath());
+  } catch (error) {
+    await unlink(temporaryPath).catch(() => {});
+    throw error;
+  }
+};
+const toggleWindowFromGlobalShortcut = () => toggleMainWindow({
+  window: mainWindow,
+  showWindow,
+  activateApp: process.platform === "darwin" ? () => app.show() : undefined,
+});
+const loadGlobalShortcut = async () => {
+  try {
+    const stored = JSON.parse(await readFile(globalShortcutPath(), "utf8"));
+    configuredGlobalShortcut = normalizeGlobalShortcutBinding(stored?.binding);
+    if (configuredGlobalShortcut === undefined) configuredGlobalShortcut = null;
+  } catch {
+    configuredGlobalShortcut = null;
+  }
+  const accelerator = globalShortcutAccelerator(configuredGlobalShortcut);
+  if (!accelerator) return;
+  try {
+    if (globalShortcut.register(accelerator, toggleWindowFromGlobalShortcut)) {
+      registeredGlobalShortcut = configuredGlobalShortcut;
+      void writeDiagnostic("global-shortcut.registered", { accelerator });
+    } else {
+      void writeDiagnostic("global-shortcut.registration-failed", { accelerator });
+    }
+  } catch (error) {
+    void writeDiagnostic("global-shortcut.registration-failed", {
+      accelerator,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    // Keep the preference so the user can change it when registration fails.
+  }
+};
+const setGlobalShortcut = (value) => {
+  const next = normalizeGlobalShortcutBinding(value);
+  if (next === undefined) return Promise.resolve({ ...globalShortcutState(), error: "invalid" });
+  const update = async () => {
+    const result = await replaceGlobalShortcut({
+      globalShortcut,
+      previous: registeredGlobalShortcut,
+      next,
+      callback: toggleWindowFromGlobalShortcut,
+      persist: persistGlobalShortcut,
+    });
+    if (!result.ok) {
+      void writeDiagnostic("global-shortcut.update-failed", { reason: result.reason });
+      return { ...globalShortcutState(), error: result.reason };
+    }
+    configuredGlobalShortcut = next;
+    registeredGlobalShortcut = next;
+    return globalShortcutState();
+  };
+  const result = globalShortcutUpdate.then(update, update);
+  globalShortcutUpdate = result.then(() => undefined, () => undefined);
+  return result;
+};
 const sidecarDataDirectory = (accountId = null) => {
   return accountId
     ? accountDataDirectory(app.getPath("userData"), configuredApiBaseUrl, accountId)
@@ -1018,7 +1096,15 @@ const refreshTrayMenu = () => {
 const desktopUpdateStatus = () => ({
   state: updateState,
   version: downloadedUpdateVersion,
+  error: updateError,
+  progress: updateProgress,
 });
+
+const recordUpdateError = (error, stage) => {
+  updateError = createUpdateDiagnostic(error, {
+    stage, version: app.getVersion(), platform: process.platform, arch: process.arch,
+  });
+};
 
 const publishDesktopUpdateStatus = () => {
   if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -1042,9 +1128,11 @@ const trackDesktopUpdateDownload = (downloadPromise, reason) => {
   updateDownloadInFlight = Promise.resolve(downloadPromise)
     .catch(async (error) => {
       updateState = "idle";
+      updateProgress = null;
       downloadedUpdateVersion = null;
       windowsDownloadedUpdateVerified = false;
       refreshTrayMenu();
+      recordUpdateError(error, "download");
       publishDesktopUpdateStatus();
       await writeDiagnostic("update.download-failed", { reason, message: error.message });
     })
@@ -1099,10 +1187,14 @@ const checkForDesktopUpdate = (reason, { force = false, throwOnError = false } =
   const now = Date.now();
   if (!force && now - lastUpdateCheckAt < updateCheckFocusThrottleMs) return Promise.resolve(null);
   lastUpdateCheckAt = now;
+  updateError = null;
+  publishDesktopUpdateStatus();
+  let diagnosticStage = "check";
   void writeDiagnostic("update.check-started", { reason });
   updateCheckInFlight = autoUpdater.checkForUpdates()
     .then(async (result) => {
       if (process.platform === "win32" && result?.isUpdateAvailable) {
+        diagnosticStage = "verify-windows-metadata";
         trustedWindowsUpdate = await fetchTrustedWindowsUpdate({
           version: result.updateInfo.version,
           updateInfo: result.updateInfo,
@@ -1122,10 +1214,12 @@ const checkForDesktopUpdate = (reason, { force = false, throwOnError = false } =
     })
     .catch(async (error) => {
       updateState = "idle";
+      updateProgress = null;
       downloadedUpdateVersion = null;
       trustedWindowsUpdate = null;
       windowsDownloadedUpdateVerified = false;
       refreshTrayMenu();
+      recordUpdateError(error, diagnosticStage);
       publishDesktopUpdateStatus();
       await writeDiagnostic("update.check-failed", { reason, message: error.message });
       throw error;
@@ -1152,6 +1246,7 @@ const configureAutoUpdater = () => {
   autoUpdater.autoRunAppAfterInstall = true;
   autoUpdater.on("update-available", (info) => {
     updateState = "available";
+    updateProgress = null;
     downloadedUpdateVersion = info?.version || null;
     if (process.platform === "win32") {
       trustedWindowsUpdate = null;
@@ -1163,6 +1258,7 @@ const configureAutoUpdater = () => {
   });
   autoUpdater.on("update-not-available", () => {
     updateState = "idle";
+    updateProgress = null;
     downloadedUpdateVersion = null;
     trustedWindowsUpdate = null;
     windowsDownloadedUpdateVerified = false;
@@ -1173,7 +1269,11 @@ const configureAutoUpdater = () => {
       void diagnosticWritten.finally(() => setTimeout(() => app.quit(), 100));
     }
   });
-  autoUpdater.on("download-progress", (progress) => { void writeDiagnostic("update.download-progress", { percent: progress.percent }); });
+  autoUpdater.on("download-progress", (progress) => {
+    updateProgress = normalizeUpdateProgress(progress);
+    publishDesktopUpdateStatus();
+    void writeDiagnostic("update.download-progress", { percent: progress.percent });
+  });
   autoUpdater.on("update-downloaded", (info) => {
     void (async () => {
       if (process.platform === "win32") {
@@ -1188,6 +1288,8 @@ const configureAutoUpdater = () => {
         autoUpdater.autoInstallOnAppQuit = true;
       }
       updateState = "downloaded";
+      updateProgress = null;
+      updateError = null;
       downloadedUpdateVersion = info?.version || downloadedUpdateVersion;
       refreshTrayMenu();
       publishDesktopUpdateStatus();
@@ -1207,9 +1309,11 @@ const configureAutoUpdater = () => {
       }
       autoUpdater.autoInstallOnAppQuit = false;
       updateState = "idle";
+      updateProgress = null;
       downloadedUpdateVersion = null;
       windowsDownloadedUpdateVerified = false;
       refreshTrayMenu();
+      recordUpdateError(error, "verify-windows-package");
       publishDesktopUpdateStatus();
       await writeDiagnostic("update.windows-package-blocked", { message: error.message });
     });
@@ -1218,10 +1322,12 @@ const configureAutoUpdater = () => {
     isQuitting = false;
     if (updateState !== "downloaded") {
       updateState = "idle";
+      updateProgress = null;
       downloadedUpdateVersion = null;
       windowsDownloadedUpdateVerified = false;
     }
     refreshTrayMenu();
+    recordUpdateError(error, updateDownloadInFlight ? "download" : "check");
     publishDesktopUpdateStatus();
     void writeDiagnostic("update.error", { message: error.message });
   });
@@ -1315,6 +1421,22 @@ const scheduleSidecarRestart = () => {
   }, delayMs);
 };
 
+// Restores the standard browser editing menu (Cut/Copy/Paste/Paste as plain
+// text/Select all, spelling suggestions, Copy link address). Pages that call
+// preventDefault() on the DOM contextmenu event never reach this handler.
+const attachEditContextMenu = (contents) => {
+  contents.on("context-menu", (_event, params) => {
+    const template = buildEditContextMenuTemplate(params, desktopMenuCopy(app.getLocale()), {
+      replaceMisspelling: (word) => contents.replaceMisspelling(word),
+      addToDictionary: (word) => contents.session.addWordToSpellCheckerDictionary(word),
+      copyLink: (url) => clipboard.writeText(url),
+    });
+    if (!template.length) return;
+    const window = BrowserWindow.fromWebContents(contents) ?? undefined;
+    Menu.buildFromTemplate(template).popup(window ? { window } : {});
+  });
+};
+
 const createWindow = async () => {
   const state = await readWindowState();
   mainWindow = new BrowserWindow({
@@ -1343,7 +1465,10 @@ const createWindow = async () => {
       mainWindow.hide();
     }
   });
+  attachEditContextMenu(mainWindow.webContents);
+  mainWindow.webContents.on("did-create-window", (childWindow) => attachEditContextMenu(childWindow.webContents));
   mainWindow.on("hide", syncRendererHibernate);
+  mainWindow.on("hide", () => globalShortcut.setSuspended(false));
   mainWindow.on("show", syncRendererHibernate);
   mainWindow.on("minimize", syncRendererHibernate);
   mainWindow.on("restore", syncRendererHibernate);
@@ -1372,6 +1497,7 @@ const createWindow = async () => {
     });
     rendererStartupGuard?.fail({ kind: "preload-error", message: String(error?.message || error).slice(0, 2000) });
   });
+  mainWindow.webContents.on("did-start-loading", () => globalShortcut.setSuspended(false));
   mainWindow.webContents.on("console-message", (details) => {
     if (details.level !== "error") return;
     void writeDiagnostic("renderer.console-error", {
@@ -1384,6 +1510,7 @@ const createWindow = async () => {
     void writeDiagnostic("renderer.loaded", { url: mainWindow?.webContents.getURL() || "" });
   });
   mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    globalShortcut.setSuspended(false);
     clearRendererUnresponsiveTimer();
     void writeDiagnostic("renderer.gone", details);
     void handleRendererProcessGone(details);
@@ -1504,6 +1631,13 @@ const startApplication = async () => {
   app.setAsDefaultProtocolClient("edgeever");
   recoveredAfterAbnormalExit = existsSync(crashMarkerPath());
   void writeDiagnostic(recoveredAfterAbnormalExit ? "session.recovered-after-abnormal-exit" : "session.started");
+  void inspectWindowsTaskbarShortcuts({
+    platform: process.platform, packaged: app.isPackaged,
+    appData: app.getPath("appData"), executable: app.getPath("exe"),
+    readdir, readShortcutLink: (path) => shell.readShortcutLink(path), existsSync,
+  }).then((result) => {
+    if (result) return writeDiagnostic("windows.taskbar-shortcuts", result);
+  }).catch((error) => { void writeDiagnostic("windows.taskbar-shortcuts-unavailable", { message: error.message }); });
   await writeFile(crashMarkerPath(), new Date().toISOString());
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
   registerDesktopAppProtocol();
@@ -1514,6 +1648,7 @@ const startApplication = async () => {
   await initialSidecar.waitUntilReady();
   void writeDiagnostic("sidecar.ready", { scope: sidecarScopeKey });
   createTray();
+  await loadGlobalShortcut();
 
   ipcMain.on("desktop:local-data-reset-available-sync", (event) => {
     event.returnValue = process.platform === "darwin" && app.isPackaged && !requestedUserDataDirectory;
@@ -1532,6 +1667,19 @@ const startApplication = async () => {
   });
   ipcMain.handle("desktop:sidecar-status", () => ({ available: Boolean(sidecar), path: sidecarPath, scope: sidecarScopeKey }));
   ipcMain.handle("desktop:system-info", () => desktopRuntimeSystemInfo());
+  ipcMain.handle("desktop:global-shortcut", (event) => {
+    if (event.sender !== mainWindow?.webContents) return null;
+    return globalShortcutState();
+  });
+  ipcMain.handle("desktop:set-global-shortcut", (event, binding) => {
+    if (event.sender !== mainWindow?.webContents) return null;
+    return setGlobalShortcut(binding);
+  });
+  ipcMain.handle("desktop:capture-global-shortcut", (event, capturing) => {
+    if (event.sender !== mainWindow?.webContents || typeof capturing !== "boolean") return false;
+    globalShortcut.setSuspended(capturing);
+    return true;
+  });
   ipcMain.handle("desktop:set-account-scope", async (_event, accountId) => {
     const normalizedAccountId = typeof accountId === "string" && accountId.trim() ? accountId.trim() : null;
     const nextScopeKey = accountScopeKey(configuredApiBaseUrl, normalizedAccountId);
@@ -1729,7 +1877,12 @@ const startApplication = async () => {
   });
   ipcMain.handle("desktop:update-status", () => desktopUpdateStatus());
   ipcMain.handle("desktop:check-update", async () => {
-    await checkForDesktopUpdate("manual", { force: true, throwOnError: true });
+    try {
+      await checkForDesktopUpdate("manual", { force: true, throwOnError: true });
+    } catch (error) {
+      // Return structured details rather than losing them in Electron IPC errors.
+      if (!updateError) recordUpdateError(error, "check");
+    }
     return desktopUpdateStatus();
   });
   ipcMain.handle("desktop:download-update", () => downloadTrustedDesktopUpdate("manual-download"));
@@ -1974,6 +2127,7 @@ app.on("before-quit", (event) => {
   event.preventDefault();
   shutdownCleanupStarted = true;
   isQuitting = true;
+  globalShortcut.unregisterAll();
   scheduledTaskScheduler.clear();
   rendererStartupGuard?.complete();
   clearRendererUnresponsiveTimer();

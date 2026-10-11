@@ -1,29 +1,20 @@
 {
-  "version": "1.100.0",
+  "version": "1.108.0",
   "changes": {
     "en-US": [
-      "Create top-level or nested notebooks directly in the Android and iOS apps.",
-      "AI-created notes open in the workspace, while new flowcharts and mind maps use improved default themes and simpler editing controls.",
-      "Architecture diagrams now lay out dense relationships more clearly, with arrows routed to node borders and around other nodes.",
-      "Markdown caret alignment and the trash action target are corrected, with refreshed platform icons.",
-      "The Best Practices guide adds AI diagram and infographic workflows and clearer navigation.",
-      "Support and partnership guides now offer direct sponsorship options and updated community links."
+      "Create editable poster notes with templates, bundled fonts, canvas tools, image export, and AI edits through the shared assistant. Edit posters on Web or desktop; Android and iOS display their preview and text. Saving artwork versions adds preview attachments. Update the server to protect poster content from older clients.",
+      "See desktop update download progress and more detailed update diagnostics in system information, including Windows taskbar shortcut details.",
+      "Recover WorkBuddy agent login after cancellation without leaving authentication stuck, with clearer login errors and more compact assistant alerts."
     ],
     "zh-CN": [
-      "Android 与 iOS 现可直接创建顶层或子笔记本。",
-      "AI 创建的笔记可直接在工作区打开；新流程图和思维导图采用更合适的默认主题，编辑操作也更清晰。",
-      "架构图中的密集关系更易辨认，连线会贴合节点边缘并绕开其他节点。",
-      "修正 Markdown 光标与删除操作的点击位置，并更新平台图标。",
-      "最佳实践指南新增 AI 图表与信息图流程，并优化导航。",
-      "赞助与合作指南现提供直接支持方式，并更新社区入口。"
+      "新增可编辑的海报笔记，支持模板、内置字体、画布工具、图片导出和统一助手 AI 编辑。Web 和桌面端支持编辑，Android 与 iOS 显示预览和文本。保存画布版本会增加预览附件；请同步升级服务端，以保护海报内容免受旧客户端覆盖。",
+      "桌面端新增更新下载进度显示，系统信息提供更详细的更新诊断及 Windows 任务栏快捷方式信息。",
+      "修复取消 WorkBuddy Agent 登录后认证卡住的问题，并简化登录错误提示与助手侧栏提醒。"
     ],
     "ja": [
-      "Android と iOS アプリから最上位または子ノートブックを直接作成できます。",
-      "AI が作成したノートをワークスペースで開けます。新しいフローチャートとマインドマップの既定テーマと編集操作も改善しました。",
-      "構成図の密集した関係を見やすくし、矢印がノードの境界に接続して他のノードを避けるようにしました。",
-      "Markdown のカーソル位置と削除操作のクリック位置を修正し、プラットフォームアイコンを更新しました。",
-      "ベストプラクティスガイドに AI 図表とインフォグラフィックの手順を追加し、ナビゲーションを改善しました。",
-      "支援・パートナーシップガイドに直接支援する方法を追加し、コミュニティへのリンクを更新しました。"
+      "編集可能なポスターノートを追加しました。テンプレート、内蔵フォント、キャンバスツール、画像書き出し、共通アシスタントによるAI編集に対応します。Webとデスクトップで編集でき、AndroidとiOSではプレビューとテキストを表示します。保存した作品の各バージョンにはプレビュー添付が追加されます。旧クライアントによる上書きを防ぐため、サーバーも更新してください。",
+      "デスクトップ更新のダウンロード進捗を表示します。システム情報には詳細な更新診断とWindowsタスクバーのショートカット情報が追加されます。",
+      "WorkBuddyエージェントのログインをキャンセルした後、認証が停止したままになる問題を修正しました。ログインエラーを分かりやすくし、アシスタントの通知をコンパクトにしました。"
     ]
   }
 }

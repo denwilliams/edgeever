@@ -248,14 +248,17 @@ const SidebarCollapseButton = ({
   onToggle,
   className,
   tooltipSide = "bottom",
+  shortcutLabel,
 }: {
   collapsed: boolean;
   onToggle: () => void;
   className?: string;
   tooltipSide?: "top" | "right" | "bottom" | "left";
+  shortcutLabel?: string;
 }) => {
   const { t } = useTranslation();
   const label = t(collapsed ? "notebookPane.expandSidebar" : "notebookPane.collapseSidebar");
+  const tooltipLabel = shortcutLabel ? `${label} (${shortcutLabel})` : label;
 
   return (
     <TooltipProvider delayDuration={0} skipDelayDuration={0}>
@@ -275,7 +278,7 @@ const SidebarCollapseButton = ({
             {collapsed ? <ChevronsRight className="h-4 w-4" aria-hidden="true" /> : <ChevronsLeft className="h-4 w-4" aria-hidden="true" />}
           </button>
         </TooltipTrigger>
-        <TooltipContent side={tooltipSide}>{label}</TooltipContent>
+        <TooltipContent side={tooltipSide}>{tooltipLabel}</TooltipContent>
       </Tooltip>
     </TooltipProvider>
   );
@@ -341,12 +344,15 @@ const CreateMemoTypeItems = ({ onCreateMemo }: { onCreateMemo: (kind?: NoteCreat
       <DropdownMenuItem className="gap-2 text-xs leading-5" onSelect={() => onCreateMemo("infographic")}>
         <PieChart className="h-4 w-4 shrink-0" />
         <span className="min-w-0 flex-1 truncate">{t("infographic.name")}</span>
+      </DropdownMenuItem>
+      <DropdownMenuItem className="gap-2 text-xs leading-5" onSelect={() => onCreateMemo("poster")}>
+        <FileText className="h-4 w-4 shrink-0" />
+        <span className="min-w-0 flex-1 truncate">{t("poster.name")}</span>
         <span className={BETA_BADGE_CLASSNAME}>Beta</span>
       </DropdownMenuItem>
       <DropdownMenuItem className="gap-2 text-xs leading-5" onSelect={() => onCreateMemo("table")}>
         <Table2 className="h-4 w-4 shrink-0" />
         <span className="min-w-0 flex-1 truncate">{t("structuredTable.name")}</span>
-        <span className={BETA_BADGE_CLASSNAME}>Beta</span>
       </DropdownMenuItem>
     </>
   );
@@ -512,6 +518,7 @@ export const NotebookPane = ({
   isResettingDemo = false,
   collapsed = false,
   onToggleCollapsed,
+  collapseShortcutLabel,
 }: {
   repository: EdgeEverRepository;
   user: AuthUser | null;
@@ -550,6 +557,7 @@ export const NotebookPane = ({
   isResettingDemo?: boolean;
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
+  collapseShortcutLabel?: string;
 }) => {
   const { t } = useTranslation();
   const showDescendantNotes = useShowDescendantNotesPreference();
@@ -946,7 +954,7 @@ export const NotebookPane = ({
                   notice={deployedUpdateUnseen}
                   onClick={onOpenSettings}
                 />
-                <SidebarCollapseButton collapsed onToggle={onToggleCollapsed} className="h-9 w-9" tooltipSide="right" />
+                <SidebarCollapseButton collapsed onToggle={onToggleCollapsed} className="h-9 w-9" tooltipSide="right" shortcutLabel={collapseShortcutLabel} />
               </div>
             </nav>
           </div>
@@ -1104,7 +1112,7 @@ export const NotebookPane = ({
                       </BrandIconContainer>
                       <span className="truncate font-medium">{t("pwa.sidebarIos") || "iOS"}</span>
                       <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-500  ">
-                        {t("pwa.sidebarIosRegionBadge") || "非大陆区"}
+                        {t("pwa.sidebarIosRegionBadge") || "海外 ID"}
                       </span>
                     </div>
                     <div className="flex shrink-0 items-center gap-1 text-slate-400 group-hover:text-slate-600 ">
@@ -1176,7 +1184,7 @@ export const NotebookPane = ({
             </button>
             <DesktopUpdateNotice />
             {onToggleCollapsed ? (
-              <SidebarCollapseButton collapsed={collapsed} onToggle={onToggleCollapsed} className="hidden lg:inline-flex" />
+              <SidebarCollapseButton collapsed={collapsed} onToggle={onToggleCollapsed} className="hidden lg:inline-flex" shortcutLabel={collapseShortcutLabel} />
             ) : null}
           </div>
         </div>

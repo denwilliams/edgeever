@@ -34,6 +34,7 @@ import type {
   MemoRevision,
   MemoSummary,
   MemoShare,
+  ManagedMemoShare,
   PublicTableForm,
   TableFormSettings,
   TableFormUpdateInput,
@@ -53,8 +54,10 @@ import type {
   TagSummary,
   TiptapDoc,
   AiSettings,
+  AiTranscriptionSettings,
   AiDiscoveredModel,
   AiProvider,
+  AiTranscriptionStandard,
   AiPromptTemplate,
   AiPromptTemplateCreateInput,
   AiPromptTemplateUpdateInput,
@@ -73,7 +76,7 @@ import type {
   PluginPublicFetchResponse,
 } from "@edgeever/shared";
 
-const MAX_SINGLE_REQUEST_UPLOAD_BYTES = 5 * 1024 * 1024;
+export const MAX_SINGLE_REQUEST_UPLOAD_BYTES = 5 * 1024 * 1024;
 
 async function consumeEventStream<T>(body: ReadableStream<Uint8Array>, onEvent: (event: T) => void) {
   const reader = body.getReader();
@@ -123,7 +126,7 @@ export type MultipartResourceUploadSource = {
   filename: string;
   mimeType: string;
   byteSize: number;
-  readPart: (start: number, end: number) => Promise<Blob>;
+  readPart: (start: number, end: number) => Promise<Blob | Uint8Array<ArrayBuffer>>;
 };
 
 export type InstanceHealth = {
@@ -251,6 +254,11 @@ export type MemoShareResponse = {
   share: MemoShare | null;
 };
 
+export type ListMemoSharesResponse = {
+  shares: ManagedMemoShare[];
+  nextOffset: number | null;
+};
+
 export type PublicMemoShareResponse = {
   share: PublicMemoShare;
 };
@@ -296,6 +304,23 @@ export type AiProviderCreatePayload = {
 
 export type AiProviderUpdatePayload = {
   provider: AiProvider;
+  displayName: string;
+  baseUrl: string;
+  apiKey?: string;
+  isEnabled: boolean;
+};
+
+export type AiTranscriptionProviderCreatePayload = {
+  provider: AiTranscriptionStandard;
+  displayName: string;
+  baseUrl: string;
+  apiKey: string;
+  isEnabled: boolean;
+  initialModelId?: string;
+};
+
+export type AiTranscriptionProviderUpdatePayload = {
+  provider: AiTranscriptionStandard;
   displayName: string;
   baseUrl: string;
   apiKey?: string;
@@ -894,6 +919,56 @@ export const createEdgeEverClient = (options: EdgeEverClientOptions = {}) => {
       const search = locale ? `?locale=${encodeURIComponent(locale)}` : "";
       return request<AiSettings>(`/api/v1/ai/settings${search}`);
     },
+
+    getAiTranscriptionSettings: () =>
+      request<AiTranscriptionSettings>("/api/v1/ai/transcription-settings"),
+
+    createAiTranscriptionProvider: (payload: AiTranscriptionProviderCreatePayload) =>
+      request<AiTranscriptionSettings>("/api/v1/ai/transcription-providers", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+
+    updateAiTranscriptionProvider: (providerId: string, payload: AiTranscriptionProviderUpdatePayload) =>
+      request<AiTranscriptionSettings>(`/api/v1/ai/transcription-providers/${encodeURIComponent(providerId)}`, {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      }),
+
+    deleteAiTranscriptionProvider: (providerId: string) =>
+      request<AiTranscriptionSettings>(`/api/v1/ai/transcription-providers/${encodeURIComponent(providerId)}`, {
+        method: "DELETE",
+      }),
+
+    addAiTranscriptionModel: (providerId: string, payload: { modelId: string; displayName?: string }) =>
+      request<AiTranscriptionSettings>(`/api/v1/ai/transcription-providers/${encodeURIComponent(providerId)}/models`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+
+    deleteAiTranscriptionModel: (providerId: string, modelConfigId: string) =>
+      request<AiTranscriptionSettings>(
+        `/api/v1/ai/transcription-providers/${encodeURIComponent(providerId)}/models/${encodeURIComponent(modelConfigId)}`,
+        { method: "DELETE" },
+      ),
+
+    updateDefaultAiTranscriptionModel: (modelConfigId: string | null) =>
+      request<AiTranscriptionSettings>("/api/v1/ai/transcription-default-model", {
+        method: "PUT",
+        body: JSON.stringify({ modelConfigId }),
+      }),
+
+    prepareNoteResourceTranscription: (memoId: string, resourceId: string, signal?: AbortSignal) =>
+      request<{ baseUrl: string; modelId: string; apiKey: string; resourceId: string; filename: string }>(
+        `/api/v1/memos/${encodeURIComponent(memoId)}/resources/${encodeURIComponent(resourceId)}/transcription-target`,
+        { method: "POST", signal },
+      ),
+
+    getAiTranscriptionDirectCredential: (providerId: string, signal?: AbortSignal) =>
+      request<{ apiKey: string }>(
+        `/api/v1/ai/transcription-providers/${encodeURIComponent(providerId)}/direct-credential`,
+        { method: "POST", signal },
+      ),
 
     createAiProvider: (payload: AiProviderCreatePayload) =>
       request<AiSettings>("/api/v1/ai/providers", {
@@ -1523,6 +1598,9 @@ export const createEdgeEverClient = (options: EdgeEverClientOptions = {}) => {
     getMemoShare: (memoId: string) =>
       request<MemoShareResponse>(`/api/v1/memos/${memoId}/share`),
 
+    listMemoShares: (offset = 0, limit = 50) =>
+      request<ListMemoSharesResponse>(`/api/v1/memo-shares?offset=${offset}&limit=${limit}`),
+
     createMemoShare: (memoId: string) =>
       request<{ share: MemoShare }>(`/api/v1/memos/${memoId}/share`, {
         method: "POST",
@@ -1698,6 +1776,16 @@ export const createEdgeEverClient = (options: EdgeEverClientOptions = {}) => {
       const { context, response } = await send(path, undefined, { setJsonContentType: false });
       if (!response.ok) await throwRequestError(context, response, "GitHub plugin latest-release manifest request failed");
       return response.text();
+    },
+
+    getCommunityPluginRegistry: async () => {
+      const { context, response } = await send("/api/v1/plugins/community-registry", undefined, { setJsonContentType: false });
+      if (response.status === 404) return null;
+      if (!response.ok) await throwRequestError(context, response, "Community registry request failed");
+      return {
+        bytes: await response.arrayBuffer(),
+        signatureBase64: response.headers.get("x-edgeever-community-registry-signature") ?? "",
+      };
     },
 
     getGithubPluginRelease: async (owner: string, repository: string, releaseTag: string) => {

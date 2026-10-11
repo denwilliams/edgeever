@@ -1,3 +1,5 @@
+import { applyPosterEdits } from "./mcp-poster-tools";
+import { hasPosterDocumentMarker, parsePosterDocument, serializePosterDocument } from "@edgeever/shared";
 import {
   AiPromptTemplateCreateSchema,
   AiPromptTemplateUpdateSchema,
@@ -71,6 +73,7 @@ import {
 } from "./memo-revision-service";
 import {
   createNotebookRecord,
+  deleteNotebookTree,
   findNotebooks,
   getNotebook,
   listNotebooks,
@@ -507,6 +510,30 @@ export const callMcpTool = async (
         diagram: diagramSemanticGraph(document),
       };
     }
+    case "get_poster": {
+      assertScope(auth, "read:memos");
+      const memo = await getMemoDetail(c.env.storage.db, auth.workspaceId, getRequiredString(args.memoId, "memoId"));
+      if (!memo) throw new AppError("not_found", "Memo not found", 404);
+      const poster = parsePosterDocument(memo.contentMarkdown);
+      if (!poster) throw new AppError("not_poster", "Memo is not an editable poster", 400);
+      return { memo: { id: memo.id, title: memo.title, notebookId: memo.notebookId, revision: memo.revision }, poster };
+    }
+    case "update_poster": {
+      assertScope(auth, "write:memos");
+      const memoId = getRequiredString(args.memoId, "memoId");
+      const memo = await getMemoDetail(c.env.storage.db, auth.workspaceId, memoId);
+      if (!memo) throw new AppError("not_found", "Memo not found", 404);
+      if (memo.revision !== args.expectedRevision) throw new AppError("revision_conflict", "Poster changed. Read it again before editing.", 409);
+      const current = parsePosterDocument(memo.contentMarkdown);
+      if (!current) throw new AppError("not_poster", "Memo is not an editable poster", 400);
+      const mutation = applyPosterEdits(args, current);
+      if (args.dryRun === true || !mutation.changed) return { dryRun: args.dryRun === true, memo, poster: mutation.document, changed: mutation.changed };
+      const result = await updateMemoRecord(c.env.storage.db, auth.workspaceId, memoId, {
+        expectedRevision: args.expectedRevision, contentMarkdown: serializePosterDocument(mutation.document),
+      }, getAuditActor(c), getActorLabel(c));
+      if (result.error !== undefined) throw new AppError(result.error, result.message, result.status ?? 400);
+      return { memo: result.memo, poster: mutation.document, changed: true };
+    }
     case "get_diagram": {
       assertScope(auth, "read:memos");
       const memoId = getRequiredString(args.memoId, "memoId");
@@ -583,6 +610,9 @@ export const callMcpTool = async (
             "Structured table content cannot be replaced through update_memo.",
             400,
           );
+        }
+        if (existing && hasPosterDocumentMarker(existing.contentMarkdown)) {
+          throw new AppError("poster_update_required", "Poster content cannot be replaced through update_memo. Use get_poster then update_poster.", 400);
         }
         if (existing && hasInfographicDocumentMarker(existing.contentMarkdown)) {
           throw new AppError(
@@ -848,6 +878,18 @@ export const callMcpTool = async (
       );
 
       return { notebook };
+    }
+    case "delete_notebook": {
+      assertScope(auth, "write:notebooks");
+      if (Object.keys(args).some((key) => key !== "notebookId" && key !== "dryRun")) {
+        throw new AppError("invalid_params", "Only notebookId and dryRun are supported; recursive note deletion is not available", 400);
+      }
+      if (args.dryRun !== undefined && typeof args.dryRun !== "boolean") {
+        throw new AppError("invalid_params", "dryRun must be a boolean", 400);
+      }
+      return deleteNotebookTree(c.env.storage.db, auth.workspaceId,
+        getRequiredString(args.notebookId, "notebookId"), getAuditActor(c),
+        { dryRun: args.dryRun === true, guardConcurrentChanges: true });
     }
     case "create_notebook": {
       assertScope(auth, "write:notebooks");

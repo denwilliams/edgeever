@@ -1,3 +1,4 @@
+import { hasPosterDocumentMarker, parsePosterDocument } from "@edgeever/shared";
 import {
   createExcerpt,
   DEFAULT_MEMO_TITLE,
@@ -22,7 +23,7 @@ import {
 import { auditStatement } from "./audit";
 import type { AppContext, AuditActor, AuthContext, Bindings } from "./api-context";
 import { AppError } from "./app-error";
-import { createId, isoNow, parseJsonArray } from "./entity-utils";
+import { clampNumber, createId, isoNow, parseJsonArray } from "./entity-utils";
 import { workspaceInboxId } from "./notebook-service";
 import { sha256 } from "./hash-utils";
 import { getRequiredString } from "./mcp-json-rpc";
@@ -53,8 +54,6 @@ export type MemoMutationCommit = {
   after: (memoId: string) => PreparedStatementAdapter[];
 };
 
-const clampNumber = (value: number, min: number, max: number) =>
-  Number.isNaN(value) ? min : Math.min(Math.max(value, min), max);
 
 export type MemoDetailRow = MemoSummaryRow & {
   content_json: string;
@@ -948,6 +947,12 @@ export const createMemoRecord = async (
   actor: { actorType: "user" | "agent"; actorId: string | null },
   actorLabel: string
 ): Promise<MemoDetail> => {
+  // Reject a missing notebook before the batch. The memo insert is a SELECT
+  // from notebooks, so a bad id used to write orphan content and then fail
+  // the read-back as a generic 500.
+  if (!(await getNotebook(db, workspaceId, input.notebookId))) {
+    throw new AppError("not_found", "Notebook not found", 404);
+  }
   const tags = normalizeTags(input.tags);
   const contentMarkdown = input.contentMarkdown ?? "";
   const contentJson = input.contentJson && typeof input.contentJson === "object"
@@ -1342,6 +1347,12 @@ export const updateMemoRecord = async (
   const tags = input.tags === undefined ? parseJsonArray(current.tags_json) : normalizeTags(input.tags);
   const excerpt = createExcerpt(contentText);
   const notebookId = input.notebookId ?? current.notebook_id;
+  if (hasPosterDocumentMarker(current.content_markdown) && !parsePosterDocument(contentMarkdown)) {
+    return { error: "poster_update_required", message: "Poster source must be edited on a supported client.", status: 409 };
+  }
+  if (hasPosterDocumentMarker(contentMarkdown) && !parsePosterDocument(contentMarkdown)) {
+    return { error: "invalid_poster", message: "Invalid poster source.", status: 400 };
+  }
   const currentTable = parseTableDocument(current.content_markdown);
   const nextTable = parseTableDocument(contentMarkdown);
   if (currentTable && !nextTable) {

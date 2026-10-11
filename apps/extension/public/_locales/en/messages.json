@@ -3,7 +3,7 @@
     "message": "EdgeEver Web Clipper"
   },
   "extensionDescription": {
-    "message": "Save the current webpage, selected content, or a right-clicked image to your self-hosted EdgeEver instance."
+    "message": "Save webpages, selections, images, and Hacker News posts to your self-hosted EdgeEver instance."
   },
   "actionTitle": {
     "message": "Save to EdgeEver"
@@ -108,7 +108,7 @@
     "message": "Default notebook"
   },
   "autoFirstNotebook": {
-    "message": "Use the first notebook automatically after connecting"
+    "message": "Inbox"
   },
   "testConnection": {
     "message": "Test connection"
@@ -484,6 +484,117 @@
     "message": "Community"
   },
   "redditLinkLabel": {
+    "message": "Linked page"
+  },
+  "saveVideoNoteToEdgeEver": {
+    "message": "Save video note to EdgeEver"
+  },
+  "savingVideoNote": {
+    "message": "Saving this video note…"
+  },
+  "videoNoteSaved": {
+    "message": "Saved the video note."
+  },
+  "videoTranscriptSaved": {
+    "message": "Saved the captions. No summary was generated."
+  },
+  "videoTranscriptNeedScope": {
+    "message": "Saved the captions. No summary was generated. Add the ai:generate scope to the token in settings, and choose a default model."
+  },
+  "videoTranscriptNeedModel": {
+    "message": "Saved the captions. No summary was generated. Choose a default model first."
+  },
+  "videoTranscriptTooLong": {
+    "message": "Saved the captions. This video is too long to summarize."
+  },
+  "videoInfoSaved": {
+    "message": "Saved the video details."
+  },
+  "videoPageUnsupported": {
+    "message": "This page is not supported yet."
+  },
+  "videoNotRead": {
+    "message": "Could not read this video."
+  },
+  "videoSourceLabel": {
+    "message": "Source"
+  },
+  "videoPlatformLabel": {
+    "message": "Platform"
+  },
+  "videoCaptionsLabel": {
+    "message": "Captions"
+  },
+  "videoCapturedAtLabel": {
+    "message": "Saved"
+  },
+  "videoSummaryHeading": {
+    "message": "Summary"
+  },
+  "videoOutlineHeading": {
+    "message": "Outline"
+  },
+  "videoTakeawaysHeading": {
+    "message": "Takeaways"
+  },
+  "videoTranscriptHeading": {
+    "message": "Transcript"
+  },
+  "videoCoverAlt": {
+    "message": "Cover"
+  },
+  "videoPlatformYouTube": {
+    "message": "YouTube"
+  },
+  "videoPlatformBilibili": {
+    "message": "Bilibili"
+  },
+  "videoCaptionsAuto": {
+    "message": "Automatic captions"
+  },
+  "videoCaptionsCreator": {
+    "message": "Creator captions"
+  },
+  "videoNoCaptions": {
+    "message": "This video has no captions."
+  },
+  "videoNoteFallbackTitle": {
+    "message": "Video note"
+  },
+  "saveHackerNewsToEdgeEver": {
+    "message": "Save Hacker News post to EdgeEver"
+  },
+  "savingPlatformClip": {
+    "message": "Saving this page to EdgeEver…"
+  },
+  "platformNotDetail": {
+    "message": "Open a Hacker News post detail page, then try again."
+  },
+  "platformUnreadable": {
+    "message": "The content is unavailable. Sign in if needed, wait for the detail page to load, then try again."
+  },
+  "platformPageChanged": {
+    "message": "The page changed during capture. Nothing was saved; try again on the intended detail page."
+  },
+  "platformImagesPartial": {
+    "message": "Text saved. Some images still use external links."
+  },
+  "platformSavedWithImages": {
+    "message": "Saved to EdgeEver with all images archived."
+  },
+  "platformAuthorLabel": {
+    "message": "Author"
+  },
+  "platformPublishedAtLabel": {
+    "message": "Published"
+  },
+  "platformRelativeTimeLabel": {
+    "message": "as displayed; relative time"
+  },
+  "platformScoreLabel": {
+    "message": "Points at capture"
+  },
+  "platformExternalLinkLabel": {
     "message": "Linked page"
   }
 }
