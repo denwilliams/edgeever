@@ -18,6 +18,12 @@
 
 - **USB 真机优先**：Android 功能调测必须使用通过 USB 连接的真实设备和 `adb`，不得启动或使用 QEMU、AVD 等 Android 模拟器；未连接可用真机时，明确标注真机验证未完成，不得以模拟器结果替代。
 
+## GitHub 沟通语言
+
+- 回复 Issue、PR 或提交 PR Review（含行内审查意见）时，使用对方正文或当前讨论的主要语言：英文用英文回复，中文用中文回复。
+- 对方明确指定沟通语言时，遵循其要求；中英混合或无法判断时，默认使用英文。
+- 不得因与仓库维护者的本地对话使用中文，就在英文 Issue 或 PR 中使用中文回复。
+
 ## GitHub Actions 与 Release 约束及流程
 
 1. **Fork 工作流边界**：配置 GitHub Actions 时必须考虑大量用户会 Fork 仓库进行自部署；仅官方仓库需要的 Job 必须使用 `github.repository == 'tianma-if/edgeever'` 门禁，严禁在下游 Fork 中分配 Runner 或执行。
@@ -46,8 +52,11 @@
 Related Issue: #<issue-number>
 ```
 
+12. **外部贡献者署名**：维护者本人无需署名；外部贡献逐条注明账号与 PR，或集中致谢。正文名单不重复列名，保留 GitHub 原生 Contributors 头像区。参数用法见 `docs/release.zh-CN.md` / `docs/release.md`。
+
 ## 环境、部署与组件约束
 
+- **AI 模型 API 优先客户端直连**：所有平台、所有功能的 AI 模型 API 请求优先由客户端直接调用模型服务；Web 端遇到浏览器网络或 CORS 限制时，允许通过 EdgeEver 后端兜底。桌面端及原生移动端保持直连；已有 HTTP 响应或开始接收流式结果后，不得因错误自动切换到后端重复调用。
 - **Cloudflare 部署**：严格按 `docs/agent-deploy-cloudflare.md` 执行。
 - **跨运行时架构**：项目未来将正式支持 Docker 自托管；实现新功能时必须保持业务逻辑与 Cloudflare 解耦，并为其他运行时预留扩展边界。Cloudflare 与 Docker 必须共用同一套业务代码，仅允许保留薄且稳定、不包含业务判断的运行入口和基础设施驱动适配器。
 - **数据库 Migration**：数据库或种子变化时，在 `migrations/` 下新增递增编号 SQL，禁止修改已执行的旧 Migration。
@@ -59,5 +68,5 @@ Related Issue: #<issue-number>
 
 ## 品牌视觉规范 / Brand Identity
 
-- **品牌色**：主绿色 `#16A06E`，Logo 图形色 `#07130B`。
+- **品牌色**：复用现有的 UI 黑灰配色，Logo 图形色 `#07130B`。
 - 修改 Logo 后执行 `bun run prepare:brand:icons` 同步各平台资源。

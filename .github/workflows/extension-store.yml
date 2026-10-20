@@ -1,8 +1,16 @@
 name: Submit Web Clipper
 
 on:
+  release:
+    types:
+      - published
   workflow_dispatch:
     inputs:
+      release_tag:
+        description: "Release tag to build or retry. Leave empty to build the selected workflow ref."
+        required: false
+        default: ""
+        type: string
       platform:
         description: "Store to submit. Chrome also covers the Edge install link."
         required: true
@@ -32,19 +40,38 @@ concurrency:
 
 jobs:
   submit:
-    if: github.repository == 'tianma-if/edgeever'
+    if: github.repository == 'tianma-if/edgeever' && (github.event_name == 'workflow_dispatch' || (!github.event.release.draft && !github.event.release.prerelease && startsWith(github.event.release.tag_name, 'v')))
     name: Submit Chrome and Firefox
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      - name: Validate formal release tag
+        if: github.event_name == 'release'
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: '[[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]'
+
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.release_tag || github.sha }}
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: |
+          for attempt in 1 2 3; do
+            if bun install --frozen-lockfile; then
+              exit 0
+            fi
+            if [[ "$attempt" = "3" ]]; then
+              exit 1
+            fi
+            sleep "$((15 * attempt))"
+          done
 
       - name: Write release notes
         env:
@@ -54,8 +81,8 @@ jobs:
       - name: Submit stores
         id: submit
         env:
-          PLATFORM: ${{ inputs.platform }}
-          DRY_RUN: ${{ inputs.dry_run }}
+          PLATFORM: ${{ inputs.platform || 'both' }}
+          DRY_RUN: ${{ inputs.dry_run || false }}
           CHROME_WEB_STORE_SERVICE_ACCOUNT_JSON: ${{ secrets.CHROME_WEB_STORE_SERVICE_ACCOUNT_JSON }}
           CHROME_WEB_STORE_CLIENT_ID: ${{ secrets.CHROME_WEB_STORE_CLIENT_ID }}
           CHROME_WEB_STORE_CLIENT_SECRET: ${{ secrets.CHROME_WEB_STORE_CLIENT_SECRET }}

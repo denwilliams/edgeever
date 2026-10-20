@@ -26,6 +26,7 @@ const EvernoteImportGuidePane = lazy(() =>
 );
 const LoginScreen = lazy(() => import("@/components/LoginScreen").then((module) => ({ default: module.LoginScreen })));
 const WorkspaceApp = lazy(() => import("@/components/WorkspaceApp").then((module) => ({ default: module.WorkspaceApp })));
+const PublicNotebookSharePage = lazy(() => import("@/components/PublicNotebookSharePage").then(module => ({ default: module.PublicNotebookSharePage })));
 const PublicSharePage = lazy(() => import("@/components/PublicSharePage").then((module) => ({ default: module.PublicSharePage })));
 const PublicTableFormPage = lazy(() => import("@/components/PublicTableFormPage").then((module) => ({ default: module.PublicTableFormPage })));
 
@@ -59,7 +60,7 @@ const EvernoteMigrationRoute = () => {
 
 const AuthenticatedWorkspace = () => {
   const queryClient = useQueryClient();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const desktopBridge = window.edgeeverDesktop;
   const [desktopScopeReady, setDesktopScopeReady] = useState(() => !desktopBridge?.isAvailable);
   const [desktopScopeError, setDesktopScopeError] = useState<Error | null>(null);
@@ -114,7 +115,11 @@ const AuthenticatedWorkspace = () => {
       if (desktopBridge?.isAvailable && payload.instanceUrl !== undefined) {
         await saveDesktopApiBaseUrl(payload.instanceUrl);
       }
-      const session = await api.login({ username: payload.username, password: payload.password });
+      const session = await api.login({
+        username: payload.username,
+        password: payload.password,
+        locale: i18n.resolvedLanguage,
+      });
       await cacheDesktopSession(session);
       return session;
     },
@@ -228,6 +233,7 @@ export const App = () => {
     <TooltipProvider delayDuration={0} skipDelayDuration={0}>
       <PwaInstallProvider>
         <Routes>
+          <Route path="/share/notebook/:token/:memoId?" element={<Suspense fallback={<AuthLoadingScreen />}><PublicNotebookSharePage /></Suspense>} />
           <Route path="/share/:token" element={<Suspense fallback={<AuthLoadingScreen />}><PublicSharePage /></Suspense>} />
           <Route path="/form/:token" element={<Suspense fallback={<AuthLoadingScreen />}><PublicTableFormPage /></Suspense>} />
           <Route path={EVERNOTE_MIGRATION_PATH} element={<EvernoteMigrationRoute />} />

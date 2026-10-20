@@ -1,8 +1,12 @@
 # 网页剪藏插件商店提交
 
 Chrome、Edge 和 Firefox 的上架由官方仓库工作流 **Submit Web Clipper** 提交。
-它和 `bun run release` 分开。产品正式发布不会上传浏览器插件，商店审核也不会
-改变 GitHub Release。
+它和 `bun run release` 分开。正式 GitHub Release 发布后会异步触发商店工作流；
+商店提交不阻塞 GitHub Release，审核结果也不会改变已发布的 Release。
+
+扩展使用 `apps/extension/package.json` 中的独立版本号，不跟随根目录
+`package.json` 的主应用版本。仅发布扩展时，合并后手动运行工作流，选择 `main`
+并留空 `release_tag` 即可，不必另发主应用的 GitHub Release。
 
 Edge 用户安装的是 Chrome 网上应用店商品
 `gjadpfmanienmlofajibkfkkpfdkclgo`。一次 Chrome 提交覆盖这个商品。Firefox
@@ -12,6 +16,12 @@ Edge 用户安装的是 Chrome 网上应用店商品
 工作流会构建安装包、上传并提交审核。它不能代替商店审核。用户会留在各自商店
 最后一个已通过的版本，直到 Chrome 和 Mozilla 分别审核完成。已经上传过的版本号
 不能重复使用。提交改动前要先提高 `apps/extension/package.json` 里的版本。
+
+调用任何商店接口前，命令会把 Firefox 审核源码 ZIP 解压到干净目录，使用冻结的
+锁文件安装依赖并重新构建。每个产物文件的 SHA-256 必须与提交版本一致，否则停止
+提交。源码包包含插件引用的 Web 共享 UI 组件；构建 CI 会监听这些依赖的变化，
+并执行相同的重建检查。两个工作流均使用检出代码中根目录 `package.json` 指定的
+Bun 版本。
 
 ## 运行
 
@@ -29,6 +39,15 @@ bun run publish:extension -- --notes "这次改了什么。"
 `--platform chrome` 或 `--platform firefox` 可以只重试一个商店。Chrome
 上同一个版本已经在审核中时，会保持原提交。Firefox 上同一个版本正在审核但还没有
 源码包时，下一次运行会补上源码包。
+
+Actions 日志和 Summary 会分别报告每个商店的提交动作、API 状态、已确认的公开
+版本（如有）、失败阶段，以及 API 返回的详细错误或警告。`submitted` /
+`already-submitted` 表示已提交审核，不代表正式上架；`STAGED` 表示审核通过但仍
+待发布。只有 API 确认的公开版本或 `PUBLISHED` 状态才会标记为已上架。工作流不会
+等待后续审核结果。
+诊断信息会隐藏凭据和私密审核说明，过长的错误响应会明确标记为截断。API 只返回
+通用错误时，仍需打开报告中的开发者后台链接查看 API 未公开的具体缺项。
+修复单个商店的问题后，仅重试对应平台即可。
 
 ## 凭据
 

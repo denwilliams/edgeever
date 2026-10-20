@@ -436,3 +436,127 @@ describe("web repository offline boundaries", () => {
     }
   });
 });
+
+describe("guarded plugin saves in the Web repository", () => {
+  test("checks the local snapshot inside the transaction even when the cloud revision has not advanced", async () => {
+    const restoreWindow = installTestWindow();
+    try {
+      const scope = "guarded-plugins";
+      const memo = await createLocalMemo(scope, { notebookId: "nb", contentMarkdown: "Original" });
+      const repository = createWebRepository(scope);
+      const input = text => ({ expectedRevision: memo.revision, expectedContentHash: memo.contentHash, editSessionId: "plugin", title: "", tags: [],
+        contentMarkdown: text, contentJson: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text }] }] } });
+      const result = await Promise.allSettled([
+        repository.updateMemo(memo, input("First"), { guardLocalSnapshot: true }),
+        repository.updateMemo(memo, input("Second"), { guardLocalSnapshot: true }),
+      ]);
+      expect(result.map(item => item.status)).toEqual(["fulfilled", "rejected"]);
+      expect(result[1].reason).toMatchObject({ code: "NOTE_CONFLICT" });
+      expect((await localDb.memos.get([scope, memo.id])).contentMarkdown).toBe("First");
+      expect((await localDb.syncQueue.get(`memo.update:${memo.id}`)).payload.contentMarkdown).toBe("First");
+    } finally { restoreWindow(); }
+  });
+
+  test("preserves conflict contents and queue diagnostics until explicitly resolved", async () => {
+    const restoreWindow = installTestWindow();
+    try {
+      const scope = "guarded-plugins";
+      const memo = await createLocalMemo(scope, { notebookId: "nb", contentMarkdown: "Local conflict" });
+      const conflict = { id: `memo.update:${memo.id}`, memoId: memo.id, scope, kind: "memo.update", status: "conflict", payload: { contentMarkdown: "Local conflict" },
+        attemptCount: 1, lastError: "Remote edit", lastErrorCode: "revision_conflict", claimId: null, createdAt: "2026-01-01", updatedAt: "2026-01-01" };
+      await localDb.syncQueue.put(conflict);
+      await expect(createWebRepository(scope).updateMemo(memo, {
+        expectedRevision: memo.revision, expectedContentHash: memo.contentHash, editSessionId: "plugin", title: "Changed", contentJson: memo.contentJson, tags: [],
+      }, { guardLocalSnapshot: true })).rejects.toMatchObject({ code: "NOTE_CONFLICT" });
+      expect(await localDb.syncQueue.get(conflict.id)).toEqual(conflict);
+      expect((await localDb.memos.get([scope, memo.id])).contentMarkdown).toBe("Local conflict");
+    } finally { restoreWindow(); }
+  });
+});
+
+describe("note duplication in the Web repository", () => {
+  test("copies on the server and keeps the copy in the local mirror", async () => {
+    const restoreWindow = installTestWindow();
+    const duplicate = api.duplicateMemo;
+    const calls = [];
+    const scope = "https://demo.edgeever.org|user-1";
+    const copy = { ...(await createLocalMemo(scope, { notebookId: "nb-1" })), id: "memo_copy", title: "Plan (copy)" };
+    api.duplicateMemo = async (memoId, input) => {
+      calls.push({ memoId, input });
+      return { memo: copy };
+    };
+    try {
+      const result = await createWebRepository(scope).duplicateMemo("memo_plan", { title: "Plan (copy)" });
+
+      expect(calls).toEqual([{ memoId: "memo_plan", input: { title: "Plan (copy)" } }]);
+      expect(result.memo).toEqual(copy);
+      const { getLocalMemo } = await import("./local-mirror.ts");
+      expect((await getLocalMemo(scope, "memo_copy"))?.title).toBe("Plan (copy)");
+    } finally {
+      api.duplicateMemo = duplicate;
+      restoreWindow();
+    }
+  });
+
+  test("never copies a note in an unresolved sync conflict", async () => {
+    const restoreWindow = installTestWindow();
+    const duplicate = api.duplicateMemo;
+    const calls = [];
+    api.duplicateMemo = async (memoId) => {
+      calls.push(memoId);
+      return { memo: { id: "memo_copy" } };
+    };
+    const scope = "https://demo.edgeever.org|user-1";
+    try {
+      await localDb.syncQueue.put({
+        id: "memo.update:memo_conflicted",
+        kind: "memo.update",
+        scope,
+        memoId: "memo_conflicted",
+        status: "conflict",
+        payload: { memoId: "memo_conflicted" },
+        attemptCount: 1,
+        lastError: "Memo was updated elsewhere",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        nextAttemptAt: null,
+      });
+
+      await expect(createWebRepository(scope).duplicateMemo("memo_conflicted", { title: "Copy" }))
+        .rejects.toThrow("memo_duplicate_pending_changes");
+      expect(calls).toEqual([]);
+    } finally {
+      api.duplicateMemo = duplicate;
+      restoreWindow();
+    }
+  });
+
+  test("never copies a note whose local edits could not be synchronized", async () => {
+    const restoreWindow = installTestWindow();
+    const duplicate = api.duplicateMemo;
+    const calls = [];
+    api.duplicateMemo = async (memoId) => {
+      calls.push(memoId);
+      return { memo: { id: "memo_copy" } };
+    };
+    const scope = "https://demo.edgeever.org|user-1";
+    try {
+      const memo = await createLocalMemo(scope, { notebookId: "nb-1" });
+      const repository = createWebRepository(scope);
+      await repository.updateMemo(memo, {
+        expectedRevision: memo.revision,
+        expectedContentHash: memo.contentHash,
+        editSessionId: "local-edit",
+        title: "Edited offline",
+        contentJson: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Unsynced" }] }] },
+        tags: [],
+      });
+
+      await expect(repository.duplicateMemo(memo.id, { title: "Copy" })).rejects.toThrow("memo_duplicate_pending_changes");
+      expect(calls).toEqual([]);
+    } finally {
+      api.duplicateMemo = duplicate;
+      restoreWindow();
+    }
+  });
+});

@@ -114,6 +114,7 @@ export const parseCompanionAgentSession = (value: unknown): CompanionAgentSessio
 
 const TOOL_HINTS: Record<string, string> = {
   find_notebooks: " Use this whenever the user names a notebook. Notebook names are not IDs.",
+  delete_notebook: " Delete an empty notebook using its exact ID from find_notebooks or resolve_notebook_path. This is separate from emptying the trash. Never trash or move its notes to make it empty unless the user explicitly requests that. If lookup is ambiguous, ask which notebook; do not guess.",
   list_notebooks: " Use this to list every notebook name. Do not guess names from the open note.",
   list_memos: " To list a named notebook, call find_notebooks first and pass that id. Without notebookId this lists the whole workspace, newest updated first. For newly created notes in a time range, use search_memos with createdAfter. If hasMore is true, say the list is incomplete.",
   search_memos: " Searches note titles and bodies, not notebook names. query is optional. For recently created or added notes, pass createdAfter (YYYY-MM-DD or ISO date-time) and omit query; never put this week/最近/新增 in query. For recently edited notes, use updatedAfter. Do not pass notebookId unless find_notebooks or list_notebooks returned it. For notes in a named notebook, find_notebooks then list_memos. If hasMore is true, say the list is incomplete.",

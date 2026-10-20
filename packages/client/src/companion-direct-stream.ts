@@ -11,8 +11,8 @@ import type {
   CompanionTurnCompleteInput,
 } from "@edgeever/shared";
 import type { ModelMessage } from "ai";
-import { sealCompanionProcess } from "@edgeever/shared";
-import { isAiCorsFailure } from "./ai-direct-stream";
+import { companionFailureDiagnostics, sealCompanionProcess } from "@edgeever/shared";
+import { throwIfAborted } from "./abort-signal";
 import { createClientAiModel } from "./ai-model";
 
 const asRecord = (value: unknown): Record<string, unknown> | null =>
@@ -135,7 +135,7 @@ export const streamDirectCompanion = async (
     complete: (body: CompanionTurnCompleteInput) => Promise<{ turn: CompanionTurn }>;
   },
 ) => {
-  const { ToolLoopAgent, isStepCount, jsonSchema, tool } = await import("ai");
+  const { streamText, isStepCount, jsonSchema, tool } = await import("ai");
   let response = prepared.turn.response ?? "";
   let process = prepared.turn.process ?? "";
   let persisted = response.length;
@@ -160,10 +160,10 @@ export const streamDirectCompanion = async (
       const completed = await options.complete({
         response, process, status, inputTokens: usage?.inputTokens, outputTokens: usage?.outputTokens,
       });
-      if (status === "failed" && error) options.onEvent({ type: "error", code: companionDirectFailureCode(error) });
+      if (status === "failed" && error) options.onEvent({ type: "error", code: companionDirectFailureCode(error), diagnostics: companionFailureDiagnostics(error) });
       else options.onEvent({ type: "done", turn: completed.turn });
     } catch (completeError) {
-      options.onEvent({ type: "error", code: companionDirectFailureCode(completeError) });
+      options.onEvent({ type: "error", code: companionDirectFailureCode(completeError), diagnostics: companionFailureDiagnostics(completeError) });
     }
   };
 
@@ -196,7 +196,7 @@ export const streamDirectCompanion = async (
       }),
     ]));
 
-    const agent = new ToolLoopAgent({
+    const generation = {
       model: createClientAiModel({
         provider: prepared.provider,
         baseUrl: prepared.baseUrl,
@@ -209,7 +209,9 @@ export const streamDirectCompanion = async (
       stopWhen: [isStepCount(prepared.maxSteps), () => pause.ask],
       maxOutputTokens: prepared.maxOutputTokens,
       maxRetries: 0,
-    });
+      // fullStream errors are handled below; SDK logging can expose request data.
+      onError: () => {},
+    };
     const messages: ModelMessage[] = prepared.messages.map((message) => {
       if (message.role === "assistant") {
         if (typeof message.content !== "string") throw new Error("Assistant content must be a string.");
@@ -225,12 +227,13 @@ export const streamDirectCompanion = async (
         }),
       };
     });
-    const result = await agent.stream({
+    const result = streamText({
+      ...generation,
       messages,
       abortSignal: options.signal,
     });
     for await (const part of result.fullStream) {
-      options.signal?.throwIfAborted();
+      throwIfAborted(options.signal);
       if (part.type === "error") throw part.error;
       if (part.type !== "text-delta") continue;
       const delta = typeof part.text === "string" ? part.text : "";
@@ -253,7 +256,6 @@ export const streamDirectCompanion = async (
       await finish("interrupted");
       return;
     }
-    if (isAiCorsFailure(error)) throw error;
     await finish("failed", undefined, error);
   }
 };

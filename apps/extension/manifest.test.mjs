@@ -13,7 +13,13 @@ describe("extension manifests", () => {
     for (const target of ["chromium", "firefox"]) {
       const manifest = buildExtensionManifest(target, extensionPackage.version);
       expect(manifest.version).toBe(extensionPackage.version);
-      expect(manifest.permissions).toEqual(["activeTab", "contextMenus", "scripting", "storage"]);
+      expect(manifest.permissions).toEqual(["activeTab", "contextMenus", "scripting", "storage", "declarativeNetRequestWithHostAccess"]);
+      expect(manifest.host_permissions).toEqual([
+        "https://*.doubanio.com/*",
+        "https://mmbiz.qpic.cn/*",
+        "https://cdnfile.sspai.com/*",
+        "https://cdn.bsky.app/*",
+      ]);
       expect(manifest.optional_host_permissions).toEqual([
         "https://*/*",
         "http://*/*",
@@ -61,6 +67,33 @@ describe("extension manifests", () => {
           js: ["assets/reddit-target.js"],
           run_at: "document_start",
         },
+        {
+          "matches": [
+                    "https://www.facebook.com/*",
+                    "https://facebook.com/*",
+                    "https://m.facebook.com/*",
+                    "https://www.instagram.com/*",
+                    "https://instagram.com/*",
+                    "https://www.linkedin.com/*",
+                    "https://linkedin.com/*",
+                    "https://www.threads.com/*",
+                    "https://threads.com/*",
+                    "https://www.threads.net/*",
+                    "https://threads.net/*",
+                    "https://bsky.app/*",
+                    "https://xueqiu.com/*",
+                    "https://www.xueqiu.com/*",
+          "https://m.okjike.com/topics/*",
+          "https://web.okjike.com/*",
+                    "https://book.douban.com/subject/*/comments*",
+                    "https://movie.douban.com/subject/*/comments*",
+                    "https://music.douban.com/subject/*/comments*"
+          ],
+          "js": [
+                    "assets/social-target.js"
+          ],
+          "run_at": "document_start"
+},
       ]);
     }
   });

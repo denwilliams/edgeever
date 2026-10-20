@@ -1,20 +1,14 @@
 {
-  "version": "1.110.0",
+  "version": "2.0.2",
   "changes": {
     "en-US": [
-      "AI assistants and external tools can create, find, and precisely edit editable posters, with fresh previews rendered by an online Web or desktop client; multi-section content can be arranged into structured layouts.",
-      "Double-click poster images and placeholders to replace them, or grouped text to edit it; template decorations no longer obscure titles in affected layouts.",
-      "Fix encrypted credential initialization for WorkBuddy on desktop to improve AI assistant connectivity."
+      "Fix AI generation failing with “undefined is not a function” on Android. Thanks @yulei666 for #630."
     ],
     "zh-CN": [
-      "AI 助手与外部工具可创建、查询和精细编辑可编辑海报，并由在线 Web 或桌面客户端生成新预览；多段内容可自动排成清晰的海报版式。",
-      "海报画布支持双击替换图片与占位图、编辑编组内文字，并修复部分模板装饰遮挡标题的问题。",
-      "修复桌面端 WorkBuddy 的加密凭据初始化问题，改善 AI 助手连接。"
+      "修复 Android 上 AI 生成立即报错“undefined is not a function”的问题。感谢 @yulei666 的贡献（#630）。"
     ],
     "ja": [
-      "AI アシスタントと外部ツールで編集可能なポスターの作成・検索・詳細編集ができ、オンラインの Web またはデスクトップクライアントが新しいプレビューを生成します。複数段落の内容も整理されたレイアウトに配置できます。",
-      "ポスターの画像やプレースホルダーをダブルクリックして置き換え、グループ内の文字を編集できます。一部のテンプレートで装飾がタイトルを隠す問題も修正しました。",
-      "デスクトップ版 WorkBuddy の暗号化された認証情報の初期化を修正し、AI アシスタントの接続を改善しました。"
+      "Android で AI 生成時に「undefined is not a function」と表示される問題を修正しました。@yulei666 さんの貢献（#630）に感謝します。"
     ]
   }
 }

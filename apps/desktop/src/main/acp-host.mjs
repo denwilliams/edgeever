@@ -4,6 +4,7 @@ import { accessSync, constants as fsConstants, existsSync, readFileSync, realpat
 import { mkdtemp, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
+import { validateTrustedAcpPath } from "./acp-path-store.mjs";
 import { Readable, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { ClientSideConnection, ndJsonStream, PROTOCOL_VERSION, RequestError } from "@agentclientprotocol/sdk";
@@ -33,6 +34,8 @@ const WORKSPACE_MARKER = `${path.sep}edgeever-acp-`;
 const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 
 const liveChildren = new Set();
+const closedChildren = new WeakSet();
+const stoppingChildren = new WeakMap();
 let exitHooked = false;
 
 const clientVersion = () => {
@@ -47,6 +50,7 @@ const clientVersion = () => {
 const trackChild = (child) => {
   if (!child) return;
   liveChildren.add(child);
+  child.once?.("close", () => closedChildren.add(child));
   child.once?.("exit", () => liveChildren.delete(child));
   if (!exitHooked) {
     exitHooked = true;
@@ -205,13 +209,14 @@ function resolveWorkBuddy(id, deps) {
       const actual = deps.realpath(candidate);
       if (!deps.stat(actual).isFile()) continue;
       deps.access(actual, fsConstants.R_OK);
+      const liteBundle = isWorkBuddyLiteBundle(actual, deps);
       if (deps.platform === "darwin") {
         const executable = path.resolve(path.dirname(actual), "../../../../MacOS/Electron");
         if (deps.exists(executable)) {
-          return { ok: true, command: workBuddyCommand(executable, actual, id, true) };
+          return { ok: true, command: workBuddyCommand(executable, actual, id, true, liteBundle) };
         }
       }
-      return { ok: true, command: workBuddyCommand(deps.executablePath, actual, id) };
+      return { ok: true, command: workBuddyCommand(deps.executablePath, actual, id, false, liteBundle) };
     } catch { /* Try another installed WorkBuddy application. */ }
   }
   const external = findOnPath(deps.platform === "win32" ? ["codebuddy.exe"] : ["codebuddy"], deps);
@@ -220,10 +225,20 @@ function resolveWorkBuddy(id, deps) {
     : { ok: false, state: "not_installed" };
 }
 
-function workBuddyCommand(executablePath, bundledCli, id, nativeBootstrap = false) {
+// WorkBuddy 5.8+ ships only dist/codebuddy-lite-wb.mjs. That bundle loads only
+// with CODEBUDDY_FORCE_LITE_WB_BUNDLE, and its bare --acp runs a one-shot print
+// session; stdio ACP is served only alongside --serve, whose gateway stays on loopback.
+function isWorkBuddyLiteBundle(bundledCli, deps) {
+  const dist = path.resolve(path.dirname(bundledCli), "../dist");
+  return deps.exists(path.join(dist, "codebuddy-lite-wb.mjs")) && !deps.exists(path.join(dist, "codebuddy.js"));
+}
+
+function workBuddyCommand(executablePath, bundledCli, id, nativeBootstrap = false, liteBundle = false) {
   const edition = id === "workbuddyCn" ? { CODEBUDDY_INTERNET_ENVIRONMENT: "internal" } : {};
+  const acpArgs = liteBundle ? ["--acp", "--serve", "--acp-transport", "stdio", "--host", "127.0.0.1"] : ["--acp"];
+  const bundleEnv = liteBundle ? { CODEBUDDY_FORCE_LITE_WB_BUNDLE: "1", SERVER__HOST: "127.0.0.1" } : {};
   return bundledCli
-    ? { command: executablePath, args: [...(nativeBootstrap ? [fileURLToPath(new URL("./workbuddy-launch.cjs", import.meta.url))] : []), bundledCli, "--acp"], env: { ...edition, ELECTRON_RUN_AS_NODE: "1" }, ...(id === "workbuddyIntl" ? { unsetEnv: ["CODEBUDDY_INTERNET_ENVIRONMENT"] } : {}) }
+    ? { command: executablePath, args: [...(nativeBootstrap ? [fileURLToPath(new URL("./workbuddy-launch.cjs", import.meta.url))] : []), bundledCli, ...acpArgs], env: { ...edition, ...bundleEnv, ELECTRON_RUN_AS_NODE: "1" }, ...(id === "workbuddyIntl" ? { unsetEnv: ["CODEBUDDY_INTERNET_ENVIRONMENT"] } : {}) }
     : { command: executablePath, args: ["--acp"], env: edition, ...(id === "workbuddyIntl" ? { unsetEnv: ["CODEBUDDY_INTERNET_ENVIRONMENT"] } : {}) };
 }
 
@@ -298,6 +313,7 @@ export function isAuthRequiredError(error) {
 export function sanitizeFailureDetail(error) {
   const message = error instanceof Error ? error.message : String(error?.message ?? error ?? "");
   let text = message.replace(/\s+/g, " ").trim();
+  text = text.replace(/https?:\/\/[^\s"']+/gi, "[url]");
   const home = homedir();
   if (home && home !== "/" && home !== "\\") text = text.split(home).join("[path]");
   text = text.replace(/~\/[^\s]+/g, "[path]");
@@ -305,6 +321,8 @@ export function sanitizeFailureDetail(error) {
   text = text.replace(/[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n]+\\)*[^\\/:*?"<>|\r\n]*/g, "[path]");
   text = text.replace(/\b(?:[A-Za-z0-9_]*(?:key|token|secret|password|credential)[A-Za-z0-9_]*)=[^\s]+/gi, "[redacted]");
   text = text.replace(/\b(?:bearer|authorization)\s+[^\s]+/gi, "[redacted]");
+  text = text.replace(/(["']?[\w-]*(?:key|token|secret|password|credential|authorization)[\w-]*["']?\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,}]+)/gi, "$1[redacted]");
+  text = text.replace(/\b(?:sk-ant-|sk-)[A-Za-z0-9_-]+/g, "[redacted]");
   text = text.replace(/\s+/g, " ").trim();
   if (!text || text === "[path]" || text === "[redacted]") return "connection_failed";
   return text.slice(0, 160);
@@ -511,7 +529,7 @@ export function createAcpSpawnPlan(input, cwd) {
     args: spec.args,
     options: {
       cwd: workspace,
-      stdio: ["pipe", "pipe", "ignore"],
+      stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
       shell: false,
       ...(spec.env || spec.unsetEnv ? { env: (() => {
@@ -525,7 +543,7 @@ export function createAcpSpawnPlan(input, cwd) {
 
 export function spawnAcpChild(spawnImpl, command, cwd) {
   const plan = createAcpSpawnPlan(command, cwd);
-  const options = { ...plan.options, shell: false, stdio: ["pipe", "pipe", "ignore"] };
+  const options = { ...plan.options, shell: false, stdio: ["pipe", "pipe", "pipe"] };
   if (options.shell !== false) throw new Error("ACP processes cannot use a shell");
   const child = spawnImpl(plan.command, plan.args, options);
   trackChild(child);
@@ -607,7 +625,7 @@ export async function removeAcpWorkspace(directory, rmImpl = rm) {
   if (typeof directory !== "string" || !directory) return;
   const resolved = path.resolve(directory);
   if (resolved === path.resolve(homedir()) || !resolved.includes(WORKSPACE_MARKER)) return;
-  await rmImpl(resolved, { recursive: true, force: true });
+  await rmImpl(resolved, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }
 
 const normalizePromptCapabilities = (initialized) => {
@@ -632,7 +650,10 @@ export function automaticAcpPermissionResponse(params) {
   return { outcome: option ? { outcome: "selected", optionId: option.optionId } : { outcome: "cancelled" } };
 }
 
-const createEdgeEverAcpClient = (requestId, emit, allowPermissions) => ({
+const createEdgeEverAcpClient = (requestId, emit, allowPermissions, onAuthStatus) => ({
+  extNotification(method, params) {
+    if (method === "_auth/status_update") onAuthStatus?.(params?.authStatus);
+  },
   requestPermission(params) {
     // Probe, install, and sign-in sessions do not originate from a user prompt.
     return allowPermissions ? automaticAcpPermissionResponse(params) : { outcome: { outcome: "cancelled" } };
@@ -663,17 +684,34 @@ const createEdgeEverAcpClient = (requestId, emit, allowPermissions) => ({
   },
 });
 
-function stopChild(child) {
-  if (!child) return;
+// exit only describes the direct process; inherited pipes can remain open until close.
+export function stopAcpChild(child) {
+  if (!child) return Promise.resolve();
+  if (stoppingChildren.has(child)) return stoppingChildren.get(child);
+  if (closedChildren.has(child)) return Promise.resolve();
+  let finish;
+  const stopped = new Promise((resolve) => { finish = resolve; });
+  stoppingChildren.set(child, stopped);
+  const onClose = () => { closedChildren.add(child); settle(); };
+  const settle = () => {
+    clearTimeout(killTimer);
+    clearTimeout(deadline);
+    child.off("close", onClose);
+    finish();
+  };
   const killTimer = setTimeout(() => {
-    if (child.exitCode == null) {
+    if (child.exitCode == null && child.signalCode == null) {
       try { child.kill("SIGKILL"); } catch { /* already gone */ }
     }
   }, 500);
-  killTimer.unref?.();
-  child.once?.("exit", () => clearTimeout(killTimer));
+  // Descendants may retain inherited pipes. Bound the wait and let fs.rm retry locks.
+  const deadline = setTimeout(settle, 2_000);
+  child.once("close", onClose);
   try { child.stdin?.destroy(); } catch { /* closed */ }
-  try { child.kill("SIGTERM"); } catch { /* already gone */ }
+  if (child.exitCode == null && child.signalCode == null) {
+    try { child.kill("SIGTERM"); } catch { /* already gone */ }
+  }
+  return stopped;
 }
 
 const promptFailureMessage = (failure) => {
@@ -698,11 +736,15 @@ export function createAcpHostRuntime(options = {}) {
   const spawnImpl = options.spawnImpl ?? nodeSpawn;
   const mkdtempImpl = options.mkdtemp ?? mkdtemp;
   const rmImpl = options.rm ?? rm;
+  // Workspace cleanup must not replace a successful handshake or its original failure.
+  const cleanupWorkspace = (directory) => removeAcpWorkspace(directory, rmImpl).catch((error) => {
+    console.warn("ACP workspace cleanup failed:", sanitizeFailureDetail(error));
+  });
   const version = options.clientVersion ?? clientVersion();
   const handshakeTimeoutMs = options.handshakeTimeoutMs ?? HANDSHAKE_TIMEOUT_MS;
   const authenticationTimeoutMs = options.authenticationTimeoutMs ?? 5 * 60_000;
   const commandDeps = options;
-  const manager = options.adapterManager ?? (options.adapterStore ? createAcpAdapterManager({ root: options.adapterStore, executablePath: options.executablePath }) : null);
+  const manager = options.adapterManager ?? (options.adapterStore ? createAcpAdapterManager({ root: options.adapterStore, executablePath: options.executablePath, fetchImpl: options.adapterFetchImpl }) : null);
   const active = new Map();
   const updateFailures = new Map();
   const installingIds = new Set();
@@ -735,14 +777,59 @@ export function createAcpHostRuntime(options = {}) {
     let child = null;
     let authMethods = [];
     let authenticationPending = false;
-    const abort = () => stopChild(child);
+    let authStatusKind;
+    let connected = false;
+    let resolveAuthStatus;
+    let authStatusReceived = new Promise((resolve) => { resolveAuthStatus = resolve; });
+    const onAuthStatus = (status) => {
+      if (!status || !["none", "account", "api_key", "gateway", "external"].includes(status.kind)) return;
+      authStatusKind = status.kind;
+      resolveAuthStatus();
+      if (connected && status.kind === "none") abort();
+    };
+    const abort = () => stopAcpChild(child);
     signal?.addEventListener("abort", abort, { once: true });
     try {
       if (signal?.aborted) throw Object.assign(new Error("connection_timeout"), { code: "TIMEOUT" });
       child = await spawnAcpChild(spawnImpl, command, cwd);
+      // Correlate transient Windows consoles with adapter connections without
+      // logging command arguments, environment variables or credential paths.
+      const processDiagnostic = (event, details = {}) => {
+        try { options.onProcessDiagnostic?.({ event, requestId, pid: child.pid, ...details }); } catch { /* diagnostics are optional */ }
+      };
+      processDiagnostic("spawned");
+      child.once("exit", (code, signal) => processDiagnostic("exited", { code, signal }));
       if (signal?.aborted) throw Object.assign(new Error("connection_timeout"), { code: "TIMEOUT" });
+      // Drain stderr even when no logger is configured. Bound each connection's
+      // diagnostic output and sanitize before crossing into the log callback.
+      const secretValues = [
+        ...Object.entries({ ...process.env, ...(typeof command === "object" ? command.env : {}) }),
+        ...mcpServers.flatMap((server) => (server.env ?? []).map(({ name, value }) => [name, value])),
+      ].filter(([key, value]) => /key|token|secret|password|credential|authorization/i.test(key) && typeof value === "string" && value.length > 0)
+        .map(([, value]) => value).sort((a, b) => b.length - a.length);
+      let diagnosticBytes = 0;
+      let stderrBuffer = "";
+      const recordStderr = (line) => {
+        if (!line.trim() || diagnosticBytes >= 16_384) return;
+        diagnosticBytes += Buffer.byteLength(line);
+        for (const secret of secretValues) line = line.split(secret).join("[redacted]");
+        try { options.onDiagnostic?.({ requestId, message: sanitizeFailureDetail(line) }); } catch { /* diagnostics are optional */ }
+      };
+      child.stderr?.setEncoding?.("utf8");
+      child.stderr?.on("data", (chunk) => {
+        if (diagnosticBytes >= 16_384) return;
+        stderrBuffer += String(chunk);
+        let newline;
+        while ((newline = stderrBuffer.indexOf("\n")) !== -1) {
+          recordStderr(stderrBuffer.slice(0, newline));
+          stderrBuffer = stderrBuffer.slice(newline + 1);
+        }
+        // Never log a partial line: a secret can span pipe chunks.
+        if (stderrBuffer.length > 16_384) { stderrBuffer = ""; diagnosticBytes = 16_384; }
+      });
+      child.stderr?.on("end", () => { recordStderr(stderrBuffer); stderrBuffer = ""; });
       const stream = acpNdJsonStream(child);
-      const connection = new ClientSideConnection(() => createEdgeEverAcpClient(requestId, emit, allowPermissions), stream);
+      const connection = new ClientSideConnection(() => createEdgeEverAcpClient(requestId, emit, allowPermissions, onAuthStatus), stream);
       void connection.closed?.catch(() => {});
       const initialized = await connection.initialize(acpInitializeParams(version));
       authMethods = publicAuthMethods(initialized);
@@ -757,11 +844,30 @@ export function createAcpHostRuntime(options = {}) {
       if (authMethodId) {
         if (!authMethods.some((method) => method.id === authMethodId)) throw new Error("invalid_auth_method");
         authenticationPending = true;
+        if (authStatusKind === "none") {
+          authStatusKind = undefined;
+          authStatusReceived = new Promise((resolve) => { resolveAuthStatus = resolve; });
+        }
         if (workBuddyAuth) await authenticateWorkBuddy(workBuddyAuth, authMethodId, signal, { readCredential });
         else await connection.authenticate({ methodId: authMethodId });
         authenticationPending = false;
       }
+      if (authStatusKind === "none") throw RequestError.authRequired();
       const session = await connection.newSession({ cwd, mcpServers });
+      // The extension is pushed asynchronously after initialize. Only agents
+      // advertising it must answer; older ACP adapters keep their existing path.
+      if (initialized?.agentCapabilities?._meta?.authStatus != null && authStatusKind === undefined) {
+        let timer;
+        try {
+          await Promise.race([
+            authStatusReceived,
+            new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("identity_status_unavailable")), options.authStatusTimeoutMs ?? 5_500); }),
+            connection.closed.then(() => { throw new Error("connection_closed"); }),
+          ]);
+        } finally { clearTimeout(timer); }
+      }
+      if (authStatusKind === "none") throw RequestError.authRequired();
+      connected = true;
       if (signal?.aborted) throw Object.assign(new Error("connection_timeout"), { code: "TIMEOUT" });
       return {
         cwd,
@@ -771,13 +877,15 @@ export function createAcpHostRuntime(options = {}) {
         authMethods,
         promptCapabilities: normalizePromptCapabilities(initialized),
         stop: abort,
+        authenticationRequired: () => authStatusKind === "none",
       };
     } catch (error) {
-      if (authMethods.length && error && typeof error === "object") error.authMethods = authMethods;
-      if (authenticationPending && error && typeof error === "object") error.authenticationPending = true;
-      abort();
-      await removeAcpWorkspace(cwd, rmImpl);
-      throw error;
+      const failure = authStatusKind === "none" && !authenticationPending ? RequestError.authRequired() : error;
+      if (authMethods.length && failure && typeof failure === "object") failure.authMethods = authMethods;
+      if (authenticationPending && failure && typeof failure === "object") failure.authenticationPending = true;
+      await abort();
+      await cleanupWorkspace(cwd);
+      throw failure;
     } finally {
       signal?.removeEventListener("abort", abort);
     }
@@ -800,12 +908,14 @@ export function createAcpHostRuntime(options = {}) {
   };
 
   return {
-    listAdapters() {
+    clearAdapterStatus(id) { latestStatus.delete(id); },
+    listAdapters(configuredPaths = {}) {
       return ["codex", "claudeCode", "antigravity", "openClaw", "hermesAgent", "grokBuild", "deepseekHarness", "piAgent", "workbuddyCn", "workbuddyIntl"].map((id) => {
-        if (installingIds.has(id)) return { ...adapterShell(id), state: "installing" };
-        const resolved = resolveCommand({ id }, { prepareProxy: false });
+        if (installingIds.has(id)) return { ...adapterShell(id), state: "installing", ...(manager?.get(id) ? { managed: true, version: manager.get(id).version } : {}), ...(updateFailures.has(id) ? { updateError: updateFailures.get(id) } : {}) };
+        const customPath = configuredPaths[id];
+        const resolved = resolveCommand({ id, path: customPath }, { prepareProxy: false });
         return resolved.ok
-          ? { ...adapterShell(id), ...(latestStatus.get(id) ?? { state: "not_probed", detail: "not_probed" }), ...(resolved.version ? { version: resolved.version, managed: true } : {}), ...(updateFailures.has(id) ? { updateError: updateFailures.get(id) } : {}) }
+          ? { ...adapterShell(id), ...(latestStatus.get(id) ?? { state: "not_probed", detail: "not_probed" }), ...(resolved.version ? { version: resolved.version, managed: true } : {}), ...(customPath ? { customPath, managed: false, version: undefined } : {}), ...(!customPath && updateFailures.has(id) ? { updateError: updateFailures.get(id) } : {}) }
           : adapterFromResolution(id, resolved);
       });
     },
@@ -826,13 +936,19 @@ export function createAcpHostRuntime(options = {}) {
             return { ...adapterShell(id), ...failureFields(classifyAcpFailure(error)), ...(isAuthRequiredError(error) ? { authMethods: error.authMethods ?? [] } : {}) };
           } finally {
             if (connected) {
-              connected.stop();
-              await removeAcpWorkspace(connected.cwd, rmImpl);
+              await connected.stop();
+              await cleanupWorkspace(connected.cwd);
             }
           }
         }, { updateOnly });
         if (result.adapter) latestStatus.set(id, result.adapter);
+        updateFailures.delete(id);
         return result;
+      } catch (error) {
+        const reason = sanitizeFailureDetail(`${error.updateStage ? `${error.updateStage}: ` : ""}${error.message ?? error}${error.cause?.code ? ` (${error.cause.code})` : ""}`);
+        updateFailures.set(id, reason);
+        try { options.onUpdateDiagnostic?.({ id, reason }); } catch { /* diagnostics are optional */ }
+        throw new Error(reason);
       } finally {
         installingIds.delete(id);
       }
@@ -860,11 +976,9 @@ export function createAcpHostRuntime(options = {}) {
         if (id === "piAgent" && !localExecutable("pi", resolutionDeps(commandDeps))) continue;
         try {
           const result = await this.installAdapter(id, { updateOnly: true });
-          updateFailures.delete(id);
           results.push({ id, ...result });
         } catch (error) {
           const reason = sanitizeFailureDetail(error);
-          updateFailures.set(id, reason);
           results.push({ id, updated: false, reason });
         }
       }
@@ -884,7 +998,7 @@ export function createAcpHostRuntime(options = {}) {
       try {
         connected = await withHandshakeTimeout((signal) => connect(resolved.command, `probe-${id}`, () => {}, signal, undefined, [], false, null, id === "workbuddyCn" || id === "workbuddyIntl"));
       } catch (error) {
-        const failure = { ...adapterShell(id), ...failureFields(classifyAcpFailure(error)), ...(isAuthRequiredError(error) ? { authMethods: error.authMethods ?? [] } : {}), ...(resolved.version ? { version: resolved.version, managed: true } : {}) };
+        const failure = { ...adapterShell(id), ...failureFields(classifyAcpFailure(error)), ...(error.authMethods?.length ? { authMethods: error.authMethods } : {}), ...(resolved.version ? { version: resolved.version, managed: true } : {}) };
         latestStatus.set(id, failure);
         return failure;
       }
@@ -896,8 +1010,8 @@ export function createAcpHostRuntime(options = {}) {
         ...(resolved.version ? { version: resolved.version, managed: true } : {}),
       };
       latestStatus.set(id, adapter);
-      connected.stop();
-      await removeAcpWorkspace(connected.cwd, rmImpl);
+      await connected.stop();
+      await cleanupWorkspace(connected.cwd);
       return adapter;
     },
 
@@ -914,8 +1028,8 @@ export function createAcpHostRuntime(options = {}) {
           return connect(workBuddyAuth?.command ?? resolved.command, `auth-${id}`, () => {}, signal, input.methodId, [], false, workBuddyAuth);
         }, authenticationTimeoutMs);
         if (id === "workbuddyCn" || id === "workbuddyIntl") {
-          connected.stop();
-          await removeAcpWorkspace(connected.cwd, rmImpl);
+          await connected.stop();
+          await cleanupWorkspace(connected.cwd);
           connected = null;
           // Login is useful only if a fresh chat process can restore credentials.
           connected = await withHandshakeTimeout((signal) => connect(resolved.command, `auth-check-${id}`, () => {}, signal, undefined, [], false, null, true));
@@ -928,15 +1042,15 @@ export function createAcpHostRuntime(options = {}) {
         const adapter = {
           ...adapterShell(id),
           ...(timedOut ? { state: "needs_login", detail: "authentication_timeout" } : error?.message === "authentication_failed" ? { state: "needs_login", detail: "authentication_failed" } : failureFields(classifyAcpFailure(error))),
-          ...((timedOut || isAuthRequiredError(error)) ? { authMethods: error.authMethods ?? latestStatus.get(id)?.authMethods ?? [] } : {}),
+          ...(error.authMethods?.length || timedOut || isAuthRequiredError(error) ? { authMethods: error.authMethods ?? latestStatus.get(id)?.authMethods ?? [] } : {}),
           ...(resolved.version ? { version: resolved.version, managed: true } : {}),
         };
         latestStatus.set(id, adapter);
         return adapter;
       } finally {
         if (connected) {
-          connected.stop();
-          await removeAcpWorkspace(connected.cwd, rmImpl);
+          await connected.stop();
+          await cleanupWorkspace(connected.cwd);
         }
       }
     },
@@ -1003,12 +1117,12 @@ export function createAcpHostRuntime(options = {}) {
         if (mcpBridge) {
           content.blocks.splice(input.adapterId === "codex" ? 1 : 0, 0, {
             type: "text",
-            text: "For EdgeEver note operations in this conversation, use only the session-provided MCP server named edgeever-current-workspace. It is connected to the account currently signed in to EdgeEver. Ignore any EdgeEver MCP server from your persistent configuration, which may target a different instance or account. For a request to generate a poster or 海报笔记, use create_poster_memo with concise copy; it produces the actual editable poster type. Never manually encode poster source, inspect local files to discover the format, or substitute poster-style Markdown. If the tool is unavailable or fails, report that clearly. To query posters, use search_memos or list_memos with poster=true rather than searching the title for 海报. For detailed design, read get_poster_capabilities for valid fields, fonts, platform sizes and operations. Read and edit a poster with get_poster then update_poster. apply_template replaces the layout and must be requested. get_poster_preview and export_poster provide saved previews and editable source, not fresh rendering. Request new PNG rendering or a full browser template with request_poster_render and expectedRevision; an online desktop/Web client handles it. Query get_poster_render_job no faster than every 5 seconds; only completed means rendered, then get_poster_preview. Pending means waiting for a client; report that honestly. Delete exact queried IDs with trash_memos; restore them with restore_memos. When you create a note, include a clickable Markdown link to it in your final answer: [note title](#memo=exact_memo_id_from_tool_result). Do not show the note ID as plain text or use an https://edgeever.ai/memo/ URL; that URL opens an external website instead of the current workspace.",
+            text: "For EdgeEver note operations in this conversation, use only the session-provided MCP server named edgeever-current-workspace. It is connected to the account currently signed in to EdgeEver. Ignore any EdgeEver MCP server from your persistent configuration, which may target a different instance or account. For a request to generate a poster or 海报笔记, first call get_poster_capabilities and read templates and browserDesignTemplates. Select by zhUse/enUse, the requested style and target platform (fit). Respect a named template. Use a basic templates ID for create_poster_memo.template. Full browserDesignTemplates IDs go only in request_poster_render.templateId, even when IDs overlap. For a new poster, apply the chosen full design during initial rendering if appropriate; an existing poster requires an explicit template-change request. With sections, basic styles share grid/list layout and differ mainly in palette. Then use create_poster_memo with concise copy; it produces the actual editable poster type. Never manually encode poster source, inspect local files to discover the format, or substitute poster-style Markdown. If the tool is unavailable or fails, report that clearly. To query posters, use search_memos or list_memos with poster=true rather than searching the title for 海报. For detailed design, read get_poster_capabilities for valid fields, fonts, platform sizes and operations. Read and edit a poster with get_poster then update_poster. apply_template replaces the layout and must be requested. get_poster_preview and export_poster provide saved previews and editable source, not fresh rendering. Request new PNG rendering or a full browser template with request_poster_render and expectedRevision; an online desktop/Web client handles it. Query get_poster_render_job no faster than every 5 seconds; only completed means rendered, then get_poster_preview. Pending means waiting for a client; report that honestly. Delete exact queried IDs with trash_memos; restore them with restore_memos. When you create a note, include a clickable Markdown link to it in your final answer: [note title](#memo=exact_memo_id_from_tool_result). Do not show the note ID as plain text or use an https://edgeever.ai/memo/ URL; that URL opens an external website instead of the current workspace.",
           });
         }
       } catch (error) {
-        connected.stop();
-        await removeAcpWorkspace(connected.cwd, rmImpl);
+        await connected.stop();
+        await cleanupWorkspace(connected.cwd);
         await mcpBridge?.close();
         return fail(promptFailureMessage(classifyAcpFailure(error)));
       }
@@ -1024,14 +1138,13 @@ export function createAcpHostRuntime(options = {}) {
         if (session.settled) return;
         session.settled = true;
         notify(event);
-        session.stop();
         active.delete(requestId);
-        void removeAcpWorkspace(session.cwd, rmImpl);
+        void session.stop().then(() => cleanupWorkspace(session.cwd));
         void session.mcpBridge?.close();
       };
       void connected.connection.prompt({ sessionId: connected.sessionId, prompt: content.blocks }).then((result) => {
         if (session.cancelled) return finish({ requestId, type: "done" });
-        const failure = promptResultFailure(result);
+        const failure = connected.authenticationRequired() ? "needs_login" : promptResultFailure(result);
         if (failure === "needs_login") {
           rememberPromptStatus({ state: "needs_login", authMethods: connected.authMethods });
         }
@@ -1039,7 +1152,7 @@ export function createAcpHostRuntime(options = {}) {
       }).catch((error) => {
         if (session.cancelled) finish({ requestId, type: "done" });
         else {
-          const failure = classifyAcpFailure(error);
+          const failure = connected.authenticationRequired() ? { state: "needs_login" } : classifyAcpFailure(error);
           if (failure.state === "needs_login") {
             rememberPromptStatus({ state: "needs_login", authMethods: connected.authMethods });
           }
@@ -1058,7 +1171,7 @@ export function createAcpHostRuntime(options = {}) {
       } catch {
         // The process may already be gone. Killing it is enough.
       }
-      session.stop();
+      await session.stop();
       void session.mcpBridge?.close();
       return { ok: true };
     },
@@ -1071,27 +1184,59 @@ const failureFields = (failure) => (
     : { state: failure.state }
 );
 
-export function registerAcpIpc(ipcMain, runtime = createAcpHostRuntime(), { allowInstall = () => false, allowPrompt = allowInstall } = {}) {
+export function registerAcpIpc(ipcMain, runtime = createAcpHostRuntime(), {
+  allowInstall = () => false, allowPrompt = allowInstall,
+  adapterPathStore = { get: async () => null, set: async () => {} },
+  chooseAdapterPath = async () => null,
+  validateAdapterPath = validateTrustedAcpPath,
+} = {}) {
+  let choosing = false;
+  const withRecordedPath = async (input) => {
+    const recorded = (input?.id ?? input?.adapterId) === "antigravity" ? await adapterPathStore.get() : null;
+    return { ...input, path: recorded ? await validateAdapterPath(recorded) : undefined };
+  };
   const send = (sender, event) => {
     if (!sender || sender.isDestroyed?.()) return;
     sender.send("desktop:acp-event", event);
   };
-  ipcMain.handle("desktop:acp-list", () => runtime.listAdapters());
-  ipcMain.handle("desktop:acp-probe", (_event, input) => runtime.probeAdapter(input));
-  ipcMain.handle("desktop:acp-install", (event, id) => {
-    if (!allowInstall(event.sender)) throw new Error("adapter_install_forbidden");
-    return runtime.installAdapter(id);
+  ipcMain.handle("desktop:acp-list", async (event) => {
+    if (!allowPrompt(event.sender, event)) throw new Error("acp_list_forbidden");
+    const recorded = await adapterPathStore.get();
+    return runtime.listAdapters({ antigravity: recorded }).map((adapter) => adapter.id === "antigravity" && recorded
+      ? { ...adapter, customPath: recorded } : adapter);
   });
-  ipcMain.handle("desktop:acp-authenticate", (event, input) => {
-    if (!allowInstall(event.sender)) throw new Error("adapter_auth_forbidden");
-    return runtime.authenticateAdapter(input);
+  ipcMain.handle("desktop:acp-choose-path", async (event, id) => {
+    if (!allowInstall(event.sender, event) || id !== "antigravity") throw new Error("adapter_path_forbidden");
+    if (choosing || event.sender.isFocused?.() !== true) return null;
+    choosing = true;
+    try {
+      const selected = await chooseAdapterPath();
+      if (!selected) return null;
+      await adapterPathStore.set(selected);
+      runtime.clearAdapterStatus?.("antigravity");
+      return selected;
+    } finally { choosing = false; }
   });
-  ipcMain.handle("desktop:acp-prompt", (event, input) => {
-    if (!allowPrompt(event.sender)) throw new Error("acp_prompt_forbidden");
-    return runtime.prompt(input, (acpEvent) => send(event.sender, acpEvent));
+  ipcMain.handle("desktop:acp-probe", async (event, input) => {
+    if (!allowPrompt(event.sender, event)) throw new Error("acp_probe_forbidden");
+    return runtime.probeAdapter(await withRecordedPath(input));
+  });
+  ipcMain.handle("desktop:acp-install", async (event, id) => {
+    if (!allowInstall(event.sender, event)) throw new Error("adapter_install_forbidden");
+    const result = await runtime.installAdapter(id);
+    if (id === "antigravity" && result.updated) await adapterPathStore.set(null);
+    return result;
+  });
+  ipcMain.handle("desktop:acp-authenticate", async (event, input) => {
+    if (!allowInstall(event.sender, event)) throw new Error("adapter_auth_forbidden");
+    return runtime.authenticateAdapter(await withRecordedPath(input));
+  });
+  ipcMain.handle("desktop:acp-prompt", async (event, input) => {
+    if (!allowPrompt(event.sender, event)) throw new Error("acp_prompt_forbidden");
+    return runtime.prompt(await withRecordedPath(input), (acpEvent) => send(event.sender, acpEvent));
   });
   ipcMain.handle("desktop:acp-cancel", (event, requestId) => {
-    if (!allowPrompt(event.sender)) throw new Error("acp_cancel_forbidden");
+    if (!allowPrompt(event.sender, event)) throw new Error("acp_cancel_forbidden");
     return runtime.cancel(requestId);
   });
   return runtime;

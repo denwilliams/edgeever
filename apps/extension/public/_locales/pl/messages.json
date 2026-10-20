@@ -11,12 +11,6 @@
   "webClipper": {
     "message": "Web Clipper"
   },
-  "supportedPlatformsLabel": {
-    "message": "Dopasowane przechwytywanie dla:"
-  },
-  "platformXiaohongshu": {
-    "message": "Xiaohongshu"
-  },
   "platformZhihu": {
     "message": "Zhihu"
   },
@@ -40,9 +34,6 @@
   },
   "optionsTitle": {
     "message": "Ustawienia EdgeEver Web Clipper"
-  },
-  "optionsSubtitle": {
-    "message": "Skonfiguruj połączenie z samodzielnie hostowaną instancją EdgeEver i domyślny notatnik."
   },
   "diagnosticsTitle": {
     "message": "Informacje i diagnostyka"
@@ -564,11 +555,17 @@
   "saveHackerNewsToEdgeEver": {
     "message": "Zapisz wpis Hacker News w EdgeEver"
   },
+  "saveV2exToEdgeEver": {
+    "message": "Zapisz temat V2EX w EdgeEver"
+  },
+  "saveXiaoyuzhouToEdgeEver": {
+    "message": "Zapisz odcinek Xiaoyuzhou w EdgeEver"
+  },
   "savingPlatformClip": {
     "message": "Zapisywanie strony w EdgeEver…"
   },
   "platformNotDetail": {
-    "message": "Otwórz stronę szczegółów wpisu Hacker News i spróbuj ponownie."
+    "message": "Otwórz stronę konkretnego wpisu, tematu lub odcinka i spróbuj ponownie."
   },
   "platformUnreadable": {
     "message": "Nie można odczytać treści. W razie potrzeby zaloguj się, poczekaj na załadowanie strony i spróbuj ponownie."
@@ -576,11 +573,17 @@
   "platformPageChanged": {
     "message": "Strona zmieniła się podczas zapisywania. Nic nie zapisano. Spróbuj ponownie na właściwej stronie."
   },
+  "platformIncomplete": {
+    "message": "Nie udało się odczytać pełnej treści. Nic nie zapisano. Rozwiń tekst i poczekaj na załadowanie obrazów, a następnie spróbuj ponownie."
+  },
   "platformImagesPartial": {
     "message": "Tekst zapisano. Część obrazów nadal korzysta z linków zewnętrznych."
   },
   "platformSavedWithImages": {
     "message": "Zapisano w EdgeEver wraz ze wszystkimi obrazami."
+  },
+  "platformNoShowNotes": {
+    "message": "Ten odcinek nie ma Show Notes."
   },
   "platformAuthorLabel": {
     "message": "Autor"
@@ -596,5 +599,193 @@
   },
   "platformExternalLinkLabel": {
     "message": "Link źródłowy"
+  },
+  "platformSupplementLabel": {
+    "message": "Uzupełnienie"
+  },
+  "platformPodcastLabel": {
+    "message": "Podcast"
+  },
+  "saveFacebookToEdgeEver": {
+    "message": "Zapisz post Facebooka w EdgeEver"
+  },
+  "saveInstagramToEdgeEver": {
+    "message": "Zapisz post Instagrama w EdgeEver"
+  },
+  "saveLinkedinToEdgeEver": {
+    "message": "Zapisz post LinkedIn w EdgeEver"
+  },
+  "saveThreadsToEdgeEver": {
+    "message": "Zapisz post Threads w EdgeEver"
+  },
+  "saveBlueskyToEdgeEver": {
+    "message": "Zapisz post Bluesky w EdgeEver"
+  },
+  "socialSelectPost": {
+    "message": "Otwórz stronę posta lub kliknij wybrany post ponownie prawym przyciskiem, aby go zapisać."
+  },
+  "checkingPageCapture": {
+    "message": "Sprawdzanie"
+  },
+  "pageCaptureAdapted": {
+    "message": "Dostosowana"
+  },
+  "pageCaptureGeneric": {
+    "message": "Ogólna"
+  },
+  "pageCaptureSelectPost": {
+    "message": "Wybierz post / tekst"
+  },
+  "pageCaptureUnavailable": {
+    "message": "Niedostępna"
+  },
+  "pageCaptureUnknown": {
+    "message": "Nieznana"
+  },
+  "platformXiaoyuzhou": {
+    "message": "Xiaoyuzhou"
+  },
+  "saveSubstackNoteToEdgeEver": {
+    "message": "Zapisz notatkę Substack w EdgeEver"
+  },
+  "adaptedPlatformsTitle": {
+    "message": "Platformy z dedykowaną obsługą"
+  },
+  "platformXiaohongshu": {
+    "message": "Xiaohongshu"
+  },
+  "platformBilibili": {
+    "message": "Bilibili"
+  },
+  "platformPosts": {
+    "message": "Posty"
+  },
+  "platformNotes": {
+    "message": "Notatki i zdjęcia"
+  },
+  "platformAnswersArticles": {
+    "message": "Odpowiedzi i artykuły"
+  },
+  "platformRepositories": {
+    "message": "Informacje o repozytorium"
+  },
+  "platformCaptionsImages": {
+    "message": "Podpisy i zdjęcia"
+  },
+  "platformMainPosts": {
+    "message": "Główne posty"
+  },
+  "platformTopics": {
+    "message": "Tematy i uzupełnienia"
+  },
+  "platformShowNotes": {
+    "message": "Show Notes odcinka"
+  },
+  "platformArticles": {
+    "message": "Artykuły"
+  },
+  "platformArticlesNotes": {
+    "message": "Artykuły i Notes"
+  },
+  "platformVideoCaptions": {
+    "message": "Napisy do filmów"
+  },
+  "viewDiagnostics": {
+    "message": "Pokaż diagnostykę"
+  },
+  "socialPlatformsTitle": {
+    "message": "Posty społecznościowe"
+  },
+  "readingPlatformsTitle": {
+    "message": "Artykuły i społeczności"
+  },
+  "mediaPlatformsTitle": {
+    "message": "Filmy i podcasty"
+  },
+  "closeNotification": {
+    "message": "Zamknij powiadomienie"
+  },
+  "clipNotifications": {
+    "message": "Powiadomienia o zapisywaniu"
+  },
+  "saveBossToEdgeEver": {
+    "message": "Zapisz ofertę BOSS Zhipin w EdgeEver"
+  },
+  "saveXueqiuToEdgeEver": {
+    "message": "Zapisz wpis Xueqiu w EdgeEver"
+  },
+  "platformBoss": {
+    "message": "BOSS Zhipin"
+  },
+  "platformXueqiu": {
+    "message": "Xueqiu"
+  },
+  "pageCaptureLoginRequired": {
+    "message": "Wymaga logowania"
+  },
+  "pageCaptureLoginHint": {
+    "message": "Oferta pokazuje podgląd przed zalogowaniem. Zaloguj się w witrynie i odśwież stronę przed zapisaniem pełnej treści. Zaznaczony tekst nadal można zapisać."
+  },
+  "platformWechat": {
+    "message": "WeChat"
+  },
+  "saveWechatToEdgeEver": {
+    "message": "Zapisz WeChat w EdgeEver"
+  },
+  "platformJike": {
+    "message": "Jike"
+  },
+  "saveJikeToEdgeEver": {
+    "message": "Zapisz Jike w EdgeEver"
+  },
+  "platformSspai": {
+    "message": "SSPAI"
+  },
+  "saveSspaiToEdgeEver": {
+    "message": "Zapisz SSPAI w EdgeEver"
+  },
+  "platformJuejin": {
+    "message": "Juejin"
+  },
+  "saveJuejinToEdgeEver": {
+    "message": "Zapisz Juejin w EdgeEver"
+  },
+  "platformDouban": {
+    "message": "Douban"
+  },
+  "saveDoubanToEdgeEver": {
+    "message": "Zapisz Douban w EdgeEver"
+  },
+  "platformOfficialAccountLabel": {
+    "message": "Konto oficjalne"
+  },
+  "platformListSourceLabel": {
+    "message": "Lista źródłowa"
+  },
+  "doubanSelectComment": {
+    "message": "Kliknij krótką opinię prawym przyciskiem i wybierz „Zapisz Douban w EdgeEver” lub zapisz zaznaczony tekst."
+  },
+  "pageCaptureRestricted": {
+    "message": "Ograniczona treść"
+  },
+  "pageCaptureRestrictedHint": {
+    "message": "Dostępny jest tylko ograniczony podgląd. Uzyskaj pełny dostęp na stronie i odśwież ją lub zaznacz widoczny fragment do zapisania."
+  },
+  "modelDirectPermission": {
+    "message": "Video summaries need direct access to $HOST$. Grant access, then clip the video again.",
+    "placeholders": {
+      "host": {
+        "content": "$1"
+      }
+    }
+  },
+  "modelDirectAllow": {
+    "message": "Allow model access"
+  },
+  "modelDirectReady": {
+    "message": "Access granted. Please clip the video again."
+  },
+  "modelDirectDenied": {
+    "message": "Model access was not granted."
   }
 }

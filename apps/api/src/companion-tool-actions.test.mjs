@@ -12,7 +12,7 @@ import { getCompanionAction, applyCompanionAction, dismissCompanionAction } from
 import { COMPANION_MCP_TOOLS, validateCompanionTool } from "./companion-tool-catalog.ts";
 import { MCP_TOOLS } from "./mcp-tools.ts";
 import { companionToolDefinitions, createCompanionTools, explicitDiagramKind, requestsInfographic, resolveWorkspaceInboxId } from "./companion-agent-tools.ts";
-import { companionExecutionReceipts } from "./companion-runtime.ts";
+import { companionExecutionReceipts } from "./test-support/companion-model.ts";
 
 const databases = [];
 afterEach(() => databases.splice(0).forEach(db => db.close()));
@@ -48,6 +48,41 @@ async function setup() {
 }
 
 describe("shared companion MCP adapter", () => {
+  test("finds, previews and deletes an empty notebook subtree through the companion", async () => {
+    const f = await setup();
+    f.sqlite.query("INSERT INTO notebooks(id, workspace_id, parent_id, name) VALUES ('child', ?, 'target', 'Empty child')").run(scope.workspaceId);
+    const tools = createCompanionTools({ ...f, scope, signal: new AbortController().signal, assertActive: async () => {}, sources: [] });
+    expect(companionToolDefinitions(f.input).find(tool => tool.name === "delete_notebook")).toBeTruthy();
+    const found = await tools.find_notebooks.execute({ name: "target", exact: true });
+    expect(found.notebooks).toHaveLength(1);
+    const args = { notebookId: found.notebooks[0].id };
+    expect(await tools.delete_notebook.execute({ ...args, dryRun: true })).toMatchObject({ dryRun: true, deleted: false, notebookCount: 2 });
+    expect(f.sqlite.query("SELECT is_deleted FROM notebooks WHERE id = 'target'").get().is_deleted).toBe(0);
+    const result = await tools.delete_notebook.execute(args);
+    expect(result).toMatchObject({ applied: true, deleted: true, dryRun: false, notebookCount: 2 });
+    expect(result.notebookIds.sort()).toEqual(["child", "target"]);
+    expect((await tools.find_notebooks.execute({ name: "target", exact: true })).notebooks).toEqual([]);
+    expect(await tools.delete_notebook.execute(args)).toMatchObject({ applied: true, deleted: true, notebookCount: 0 });
+    expect(f.sqlite.query("SELECT COUNT(*) AS n FROM audit_events WHERE action = 'notebook.delete'").get().n).toBe(1);
+    expect(f.sqlite.query("SELECT COUNT(*) AS n FROM companion_actions").get().n).toBe(0);
+    expect((await getMemoDetail(f.db, scope.workspaceId, f.notes[0].id)).contentMarkdown).toBe("One original content");
+  });
+
+  test("companion notebook deletion preserves nonempty subtrees and protects the inbox", async () => {
+    const f = await setup();
+    f.sqlite.query("UPDATE notebooks SET parent_id = 'target' WHERE id = 'ideas'").run();
+    f.sqlite.query("INSERT INTO notebooks(id, workspace_id, name, slug) VALUES (?, ?, 'Inbox', 'inbox')").run(`${scope.workspaceId}_inbox`, scope.workspaceId);
+    const tools = createCompanionTools({ ...f, scope, signal: new AbortController().signal, assertActive: async () => {}, sources: [] });
+    for (const dryRun of [true, false]) {
+      await expect(tools.delete_notebook.execute({ notebookId: "target", dryRun })).rejects.toMatchObject({ code: "notebook_not_empty" });
+    }
+    const inboxTools = createCompanionTools({ ...f, scope, signal: new AbortController().signal, assertActive: async () => {}, sources: [] });
+    await expect(inboxTools.delete_notebook.execute({ notebookId: `${scope.workspaceId}_inbox` })).rejects.toMatchObject({ code: "bad_request" });
+    expect(f.sqlite.query("SELECT COUNT(*) AS n FROM notebooks WHERE is_deleted = 1").get().n).toBe(0);
+    expect(f.sqlite.query("SELECT COUNT(*) AS n FROM audit_events WHERE action = 'notebook.delete'").get().n).toBe(0);
+    expect((await getMemoDetail(f.db, scope.workspaceId, f.notes[0].id)).isDeleted).toBe(false);
+  });
+
   test("poster CRUD reuses scoped queries, guarded edits, recoverable trash and restoration", async () => {
     const f = await setup();
     const tools = createCompanionTools({ ...f, scope, signal: new AbortController().signal, assertActive: async () => {}, sources: [] });
@@ -73,7 +108,7 @@ describe("shared companion MCP adapter", () => {
     expect(parsePosterDocument((await getMemoDetail(f.db, scope.workspaceId, created.id)).contentMarkdown).copy.title).toBe("Focus on what matters");
   });
   test("reuses the exact reviewed MCP definitions, with no administration or upload tools", () => {
-    expect(COMPANION_MCP_TOOLS).toHaveLength(55);
+    expect(COMPANION_MCP_TOOLS).toHaveLength(56);
     for (const definition of COMPANION_MCP_TOOLS) expect(MCP_TOOLS.includes(definition)).toBe(true);
     for (const name of ["upload_memo_image", "upload_memo_attachment", "empty_trash", "share_memo"]) {
       expect(() => validateCompanionTool(name, {})).toThrow();
@@ -85,7 +120,7 @@ describe("shared companion MCP adapter", () => {
   });
 
   const operations = [
-    ["create_memo", n => ({ notebookId: "ideas", title: "New", contentMarkdown: "Exact new body" })],
+    ["create_memo", () => ({ notebookId: "ideas", title: "New", contentMarkdown: "Exact new body" })],
     ["update_memo", n => ({ memoId: n[0].id, title: "Changed", contentMarkdown: "Exact replacement" })],
     ["merge_memos", n => ({ memoIds: n.map(note => note.id), title: "Merged", notebookId: "target" })],
     ["move_memos", n => ({ memoIds: [n[0].id], notebookId: "target" })],
@@ -139,7 +174,7 @@ describe("shared companion MCP adapter", () => {
   test("read and dry-run tools reuse MCP without writing or requiring a proposal", async () => {
     const f = await setup();
     const tools = createCompanionTools({ ...f, scope, signal: new AbortController().signal, assertActive: async () => {}, sources: [] });
-    expect(Object.keys(tools)).toHaveLength(57);
+    expect(Object.keys(tools)).toHaveLength(58);
     expect(await tools.get_memo.execute({ memoId: f.notes[0].id })).toMatchObject({ content: "One original content" });
     expect(await tools.trash_memos.execute({ memoIds: [f.notes[0].id], dryRun: true })).toMatchObject({ dryRun: true });
     expect(await getMemoDetail(f.db, scope.workspaceId, f.notes[0].id)).not.toBeNull();
@@ -174,6 +209,8 @@ describe("shared companion MCP adapter", () => {
     expect(tools.get_poster).toBeTruthy();
     expect(tools.update_poster).toBeUndefined();
     expect(tools.update_memo).toBeUndefined();
+    expect(tools.delete_notebook).toBeUndefined();
+    expect(companionToolDefinitions({ ...f.input, allowWrites: false }).some(tool => tool.name === "delete_notebook")).toBe(false);
     expect(tools.merge_memos).toBeUndefined();
     expect(tools.list_note_templates).toBeTruthy();
     expect(tools.get_ai_instruction).toBeTruthy();

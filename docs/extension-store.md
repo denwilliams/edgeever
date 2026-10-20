@@ -2,8 +2,13 @@
 
 Chrome, Edge, and Firefox listings are submitted by the official repository
 workflow **Submit Web Clipper**. This is separate from `bun run release`.
-A product release does not upload the browser extension, and a store review
-does not change a GitHub Release.
+A stable GitHub Release triggers the store workflow asynchronously. Store
+submission does not block the GitHub Release, and review does not change it.
+
+The extension has its own version in `apps/extension/package.json`, independent
+of the main app version in the root `package.json`. For an extension-only release,
+merge the change, then run the workflow manually on `main` with `release_tag`
+left empty. A new GitHub Release for the main app is not required.
 
 Edge users install the Chrome Web Store item
 `gjadpfmanienmlofajibkfkkpfdkclgo`. One Chrome submission covers that item.
@@ -14,6 +19,13 @@ The workflow builds the packages, uploads them, and submits them for review.
 It does not approve the listing. Users stay on the last approved version until
 Chrome and Mozilla each finish review. An uploaded version number cannot be
 reused. Increase `apps/extension/package.json` before submitting changes.
+
+Before either store is contacted, the command extracts the Firefox review source
+ZIP into a clean directory, installs with the frozen lockfile, and rebuilds it.
+Every output file must match the submission build by SHA-256; a mismatch stops
+the command. The archive includes the shared Web UI components the extension
+imports. Build CI watches these dependencies and runs the same rebuild check.
+Both workflows use the Bun version from the checked-out root `package.json`.
 
 ## Run it
 
@@ -34,6 +46,17 @@ bun run publish:extension -- --notes "What changed."
 version that is already awaiting review is left in place. A Firefox version
 that is awaiting review and has no source archive receives the source archive
 on the next run.
+
+The Actions log and Summary report each store separately: submission action,
+API state, confirmed public version (when available), failure stage, and the
+API's detailed error response or warnings. `submitted` / `already-submitted`
+mean review submission, not publication; `STAGED` means approved but awaiting
+publication. Only an API-confirmed public version or `PUBLISHED` state is
+reported as published. The run does not wait for later review results.
+Diagnostics redact credentials and private review notes; large error responses
+are explicitly truncated. If the API returns only a generic error, use the
+linked developer dashboard for requirements that the API does not expose.
+After fixing a store-specific issue, retry only that platform.
 
 ## Credentials
 

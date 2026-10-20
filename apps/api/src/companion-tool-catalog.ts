@@ -10,7 +10,7 @@ const allowed = new Set([
   "import_memos", "update_memo",
   "trash_memos", "restore_memos", "move_memos", "add_tags_to_memos", "remove_tags_from_memos",
   "rename_tag", "delete_tag", "merge_memos", "list_memo_resources", "list_resources",
-  "list_memo_revisions", "restore_memo_revision", "move_notebook", "create_notebook", "rename_notebook",
+  "list_memo_revisions", "restore_memo_revision", "move_notebook", "create_notebook", "rename_notebook", "delete_notebook",
   "get_notebook", "find_notebooks", "resolve_notebook_path", "list_notebooks", "list_tags", "get_workspace_stats",
   "list_note_templates", "get_note_template", "create_note_template", "update_note_template", "delete_note_template",
   "use_note_template", "list_ai_instructions", "get_ai_instruction", "create_ai_instruction", "update_ai_instruction",

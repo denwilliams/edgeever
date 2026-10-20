@@ -5,7 +5,7 @@
 EdgeEver provides client plugin and no-code theme extension capabilities. Users can install extensions from the official marketplace, public GitHub repositories, or manifest URLs. Installed extensions sync across Web and desktop platforms with the current workspace and run while EdgeEver is open; Android and iOS native apps do not run plugins.
 
 > [!NOTE]
-> **Security Model**: Client plugins use a trusted-code model (similar to Obsidian). Enabling a plugin grants it trust to run within the client JavaScript environment and invoke plugin APIs. Capability declarations (`permissions`) in the manifest disclose the functional scope to users and do not enforce a hard sandbox. Theme packages are purely declarative JSON and execute no JavaScript.
+> **Security Model**: Client plugins use a trusted-code model (similar to Obsidian). Enabling a plugin grants it trust to run within the client JavaScript environment and invoke plugin APIs. Capability declarations (`permissions`) in the manifest disclose the functional scope to users and do not enforce a hard sandbox. The same applies to `networkHosts`: it describes intended destinations rather than restricting plugin code. Desktop plugins can also reach login credentials, local data and Agent capabilities through the client bridge. Theme packages are purely declarative JSON and execute no JavaScript.
 
 ---
 
@@ -21,13 +21,15 @@ EdgeEver provides client plugin and no-code theme extension capabilities. Users 
   - [2. Templates](#2-templates)
   - [3. Resources & Attachments](#3-resources--attachments)
   - [4. Editor & Embeds](#4-editor--embeds)
-  - [5. UI, Commands & Panels](#5-ui-commands--panels)
-  - [6. Settings](#6-settings)
-  - [7. Storage & Secrets](#7-storage--secrets)
-  - [8. Network Requests](#8-network-requests)
-  - [9. Schedules (Desktop Only)](#9-schedules-desktop-only)
-  - [10. Events](#10-events)
-  - [11. AI Capabilities](#11-ai-capabilities)
+  - [5. Commands](#5-commands)
+  - [6. UI & Notices](#6-ui--notices)
+  - [7. Panels](#7-panels)
+  - [8. Settings](#8-settings)
+  - [9. Storage & Secrets](#9-storage--secrets)
+  - [10. Network Requests](#10-network-requests)
+  - [11. Schedules (Desktop Only)](#11-schedules-desktop-only)
+  - [12. Events](#12-events)
+  - [13. AI Capabilities](#13-ai-capabilities)
 - [Themes (No-Code Extensions)](#themes-no-code-extensions)
 - [Packaging, Distribution & Local Testing](#packaging-distribution--local-testing)
   - [Packaging Rules](#packaging-rules)
@@ -143,6 +145,10 @@ The plugin context object (`context`) exposes these capability interfaces:
 | Namespace | Permission (Disclosure) | Core Methods | Description |
 | :--- | :--- | :--- | :--- |
 | **`context.notes`** | `notes:read`<br>`notes:write`<br>`notes:delete` | `query()`, `queryContent()`, `get()`, `create()`, `update()`, `editMarkdown()`, `delete()`, `move()`, `pin()`, `restore()`, `revisions` | Query notes, retrieve bodies, optimistic concurrent edits, and revision history |
+| **`context.diagrams`** | `notes:read`<br>`notes:write` | `get()`, `edit()` | Read diagram graphs/layouts and edit nodes and edges in batches |
+| **`context.tables`** | `notes:read`<br>`notes:write` | `get()`, `edit()` | Read complete tables and edit fields, records, and cells in batches |
+| **`context.posters`** | `notes:read`<br>`notes:write` | `capabilities()`, `get()`, `edit()` | Edit poster elements, layers, groups, styles, and canvas |
+| **`context.infographics`** | `notes:read`<br>`notes:write` | `capabilities()`, `get()`, `edit()` | Edit nested infographic data, templates, and themes |
 | **`context.notebooks`** | `metadata:read`<br>`metadata:write` | `list()`, `create()`, `update()`, `delete()` | Manage notebook trees, hierarchy, and CRUD operations |
 | **`context.tags`** | `metadata:read`<br>`metadata:write` | `list()`, `rename()`, `delete()` | Global tag listing, renaming, and removal |
 | **`context.templates`** | `templates:read`<br>`templates:write` | `list()`, `create()`, `update()`, `delete()`, `use()` | Template management and one-click note creation |
@@ -240,6 +246,65 @@ await context.tags.delete("unused-tag");
 ```
 
 ---
+
+#### Reading and editing structured notes
+
+`notes.query()` / `queryContent()` / `get()` return `kind` (`text`, `mind-map`, `flowchart`, `architecture`, `table`, `poster`, `infographic`, or `video`). Full notes also include a detached `contentJson` copy. The full persisted special-note payload remains available in `contentMarkdown`; reading these fields does not mutate the note.
+
+Read a diagram, table, poster, or infographic through its dedicated `get()` before calling `edit()` with the returned `note.revision`, `note.contentHash`, and `editToken`. The snapshot token also detects unsynced local changes whose cloud revision has not advanced. A batch is fully validated before one repository write. `dryRun: true` returns a preview without saving or emitting a note mutation event; its `note` and `editToken` still refer to the saved baseline.
+
+```ts
+const snapshot = await context.diagrams.get(noteId, { includeLayout: true });
+const result = await context.diagrams.edit(noteId, {
+  expectedRevision: snapshot.note.revision,
+  expectedContentHash: snapshot.note.contentHash,
+  expectedEditToken: snapshot.editToken,
+  reflow: "preserve",
+  operations: [{ op: "update_node", nodeId: "root", changes: { label: "Updated" } }],
+});
+
+const table = await context.tables.get(tableNoteId);
+await context.tables.edit(tableNoteId, {
+  expectedRevision: table.note.revision,
+  expectedContentHash: table.note.contentHash,
+  expectedEditToken: table.editToken,
+  operations: [
+    { op: "update_record", recordId: "row-1", cells: { "field-1": "Updated" } },
+    { op: "add_record", recordId: "row-2", cells: { "field-1": "New" } },
+  ],
+});
+```
+
+- Diagram operations: `add_node`, `update_node`, `remove_node`, `add_edge`, `update_edge`, `remove_edge`; 1–100 per batch. Removing a node with children requires `cascade: true`. Existing layout is preserved by default; `reflow: "all"` recomputes it. Theme and structure remain unchanged.
+- Table operations: `add_field`, `update_field`, `remove_field`, `add_record`, `update_record`, `remove_record`; 1–100 per batch. Cells are keyed by field ID. Attachment writes use resource ID arrays; the host checks note ownership and resolves metadata. New records may specify a unique `recordId`; omitted IDs are generated.
+- When schema changes convert or remove populated cells, preview `changedCellCount` / `removedAttachmentCount` with `dryRun`, then explicitly pass `allowDataChanges: true`. Record deletion executes directly; plugins should provide appropriate user interaction.
+- Posters accept `edits: [{ id, patch }]` and `operations`: `add`, `remove`, `duplicate`, `reorder`, `group`, `ungroup`, `align`, `lock`, `apply_template`. Element patches run first, ordered operations second, canvas/platform resizing last. Array order is back to front. Discover editable fields, platforms, and fonts with `posters.capabilities()`. Locked elements must be explicitly unlocked before editing/removal. `apply_template` replaces all elements; use only for a requested layout replacement. Images must belong to the note. Changes clear the old preview reference but do not render a new image.
+- Infographics support `set_data` / `remove_data` / `insert_data` at nested paths of field names and array indexes; insertions have a separate `index`. Batches contain 1–100 operations. `set_template` / `set_theme` explicitly change template/theme names from `infographics.capabilities()`. Ordinary data edits preserve templates, theme overrides, canvas configuration, and conversation history. The note title is unchanged; use `notes.update()` separately if needed. The existing AntV parser validates changes. The data section may be reformatted, but unrequested parsed values and styles must remain equal. Values that cannot round-trip (such as unsupported arrays or multiline scalars) throw `INVALID_STRUCTURED_EDIT` instead of being truncated or silently dropped. Theme changes replace only the theme name and preserve explicit color/style overrides.
+
+```ts
+const poster = await context.posters.get(posterNoteId);
+await context.posters.edit(posterNoteId, {
+  expectedRevision: poster.note.revision,
+  expectedContentHash: poster.note.contentHash,
+  expectedEditToken: poster.editToken,
+  edits: [{ id: "heading", patch: { text: "Updated", fill: "#16A06E" } }],
+});
+
+const infographic = await context.infographics.get(infographicNoteId);
+await context.infographics.edit(infographicNoteId, {
+  expectedRevision: infographic.note.revision,
+  expectedContentHash: infographic.note.contentHash,
+  expectedEditToken: infographic.editToken,
+  operations: [{ op: "set_data", path: ["lists", 0, "label"], value: "Updated" }],
+});
+```
+
+**Compatibility and errors**: Updating title/tags through `notes.update()` preserves the original body. Supplying `contentMarkdown` for a special note, using `notes.editMarkdown()`, or writing to its body through editor Markdown/embed methods throws `STRUCTURED_NOTE_REQUIRED`. Generic Markdown creation/writes also reject special-note markers. Existing plugins must select the API based on `kind`. Wrong note types throw `NOTE_TYPE_MISMATCH`; invalid batches throw `INVALID_STRUCTURED_EDIT`; schema data changes require `TABLE_DATA_CHANGES_REQUIRED`; stale snapshots or unsaved editor changes throw `NOTE_CONFLICT` and require saving/reloading. Dedicated writes use the host repository's existing sync, revision history, and refresh mechanisms. An offline result does not confirm cloud synchronization.
+
+Plugin saves also compare the local snapshot inside the repository transaction, preventing multiple windows from overwriting each other after host validation. Unresolved sync conflicts block further plugin writes and preserve the queued draft and diagnostics. Desktop plugin saves use a dedicated native method that commits content, history, and outbox together. Older hosts without that method throw `HOST_UPGRADE_REQUIRED`; no unguarded fallback is attempted. Ordinary editor save behavior is unchanged. Server history retains the existing five-minute snapshot policy, so each plugin write is not guaranteed a separate cloud revision.
+
+After building the sidecar, maintainers can run `bun run test:plugin-sync` to verify an isolated Web IndexedDB → local API/SQLite → native sidecar → Web round trip, offline persistence, restart, and conflict recovery. `test:desktop:sidecar` includes this check. Set `EDGE_EVER_LEGACY_SIDECAR_PATH` and optionally `EDGE_EVER_LEGACY_MIGRATIONS_PATH` to also verify data created by an older native service upgrading to the current build. All native processes use temporary test directories; the installed desktop application is not launched and real account data is not read. This verifies the native service on the current host and does not replace device or in-app acceptance on other platforms.
+
 
 ### 2. Templates
 
@@ -347,9 +412,7 @@ await context.editor.insertEmbed({
 
 ---
 
-### 5. UI, Commands & Panels
-
-#### Commands
+### 5. Commands
 
 ```ts
 context.commands.register({
@@ -363,14 +426,21 @@ context.commands.register({
 });
 ```
 
-#### Note Navigation
+---
+
+### 6. UI & Notices
 
 ```ts
+// Global host notice
+context.ui.showNotice("Action executed");
+
 // Open note and optionally jump to exact search term
 await context.ui.openNote(noteId, { search: "search term" });
 ```
 
-#### Custom DOM Panels
+---
+
+### 7. Panels
 
 Register native DOM panels presented as dialogs or full-screen views:
 
@@ -420,7 +490,7 @@ await context.ui.panels.open("task-dashboard", { state: { initialTab: "all" } })
 
 ---
 
-### 6. Settings
+### 8. Settings
 
 Declare settings fields in `manifest.json`; EdgeEver renders the settings UI automatically:
 
@@ -467,7 +537,7 @@ context.events.on("settings.changed", async ({ key }) => {
 
 ---
 
-### 7. Storage & Secrets
+### 9. Storage & Secrets
 
 Isolated per workspace and plugin ID on the current device:
 
@@ -485,7 +555,7 @@ await context.secrets.remove("api_key");
 
 ---
 
-### 8. Network Requests
+### 10. Network Requests
 
 ```ts
 // 1. Standard request (arbitrary HTTP/HTTPS; subject to host CORS policies)
@@ -506,7 +576,7 @@ const xml = await publicRes.text();
 
 ---
 
-### 9. Schedules (Desktop Only)
+### 11. Schedules (Desktop Only)
 
 Desktop plugins can persist scheduled execution of registered commands while EdgeEver is running:
 
@@ -534,7 +604,7 @@ await context.schedules.remove("hourly-sync");
 
 ---
 
-### 10. Events
+### 12. Events
 
 Subscribe to workspace data changes:
 
@@ -551,7 +621,7 @@ context.events.on("workspace.synced", () => { /* Workspace sync completed */ });
 
 ---
 
-### 11. AI Capabilities
+### 13. AI Capabilities
 
 Invoke workspace-configured AI models for text generation and media transcription (credentials are managed securely by the host; plugins never touch user API keys):
 

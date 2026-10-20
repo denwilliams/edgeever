@@ -40,8 +40,20 @@ contextBridge.exposeInMainWorld("edgeeverDesktop", Object.freeze({
   copyText: (value) => ipcRenderer.invoke("desktop:copy-text", value),
   copyHtml: (html, plainText) => ipcRenderer.invoke("desktop:copy-html", { html, plainText }),
   copyImage: (bytes) => ipcRenderer.invoke("desktop:copy-image", bytes),
+  readClipboard: () => {
+    // Check in the isolated preload world; renderer JavaScript cannot forge this
+    // gesture state. Clipboard reads are reserved for an explicit paste action.
+    if (!navigator.userActivation?.isActive) return Promise.reject(new Error("Clipboard read requires user activation"));
+    return ipcRenderer.invoke("desktop:read-clipboard").then((snapshot) => ({
+      html: snapshot.html,
+      text: snapshot.text,
+      images: snapshot.images.map(normalizeIpcBytes),
+    }));
+  },
   setSessionToken: (value) => ipcRenderer.invoke("desktop:set-session-token", value),
   clearSessionToken: () => ipcRenderer.invoke("desktop:clear-session-token"),
+  testPicGoConnection: (endpoint) => ipcRenderer.invoke("desktop:picgo-test", endpoint),
+  uploadPicGoImage: (input) => ipcRenderer.invoke("desktop:picgo-upload", input),
   publicNetworkFetch: (requestId, input) => ipcRenderer.invoke("desktop:public-network-fetch", requestId, input),
   cancelPublicNetworkFetch: async (requestId) => { ipcRenderer.send("desktop:cancel-public-network-fetch", requestId); },
   openAiProviderStream: (requestId, input) => ipcRenderer.invoke("desktop:ai-direct-open", requestId, input),
@@ -52,6 +64,7 @@ contextBridge.exposeInMainWorld("edgeeverDesktop", Object.freeze({
     return () => ipcRenderer.removeListener("desktop:ai-direct-chunk", listener);
   },
   listAcpAdapters: () => ipcRenderer.invoke("desktop:acp-list"),
+  chooseAcpAdapterPath: () => ipcRenderer.invoke("desktop:acp-choose-path", "antigravity"),
   probeAcpAdapter: (input) => ipcRenderer.invoke("desktop:acp-probe", input),
   installAcpAdapter: (id) => ipcRenderer.invoke("desktop:acp-install", id),
   authenticateAcpAdapter: (input) => ipcRenderer.invoke("desktop:acp-authenticate", input),

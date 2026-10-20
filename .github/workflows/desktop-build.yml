@@ -255,7 +255,16 @@ jobs:
           echo "CSC_IDENTITY_AUTO_DISCOVERY=true" >> "$GITHUB_ENV"
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: |
+          for attempt in 1 2 3; do
+            if bun install --frozen-lockfile; then
+              exit 0
+            fi
+            if [[ "$attempt" = "3" ]]; then
+              exit 1
+            fi
+            sleep "$((15 * attempt))"
+          done
 
       - name: Build Web renderer
         env:
@@ -447,6 +456,9 @@ jobs:
             Write-Warning "Dependency installation failed on attempt $attempt; retrying."
             Start-Sleep -Seconds (15 * $attempt)
           }
+
+      - name: Test ACP process and workspace cleanup
+        run: bun test --cwd apps/desktop src/main/acp-cleanup.test.mjs
 
       - name: Build Web renderer
         env:
