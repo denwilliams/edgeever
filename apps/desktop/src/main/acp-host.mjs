@@ -516,7 +516,81 @@ export function acpInitializeParams(version = clientVersion()) {
   };
 }
 
-export function createAcpSpawnPlan(input, cwd) {
+// Dock, Finder, and Start Menu launches give the desktop process a minimal PATH.
+// Agents then fail user MCP configs whose command is a bare `npx` or `npm`.
+const desktopToolDirectories = (platform, home, env) => {
+  const join = platform === "win32" ? path.win32.join : path.posix.join;
+  const volta = join(home, ".volta", "bin");
+  const asdf = join(home, ".asdf", "shims");
+  const mise = join(home, ".local", "share", "mise", "shims");
+  const fnm = join(home, ".fnm", "aliases", "default", "bin");
+  if (platform === "win32") {
+    return [
+      env.APPDATA && join(env.APPDATA, "npm"),
+      env.LOCALAPPDATA && join(env.LOCALAPPDATA, "Volta", "bin"),
+      volta,
+      env.PROGRAMFILES && join(env.PROGRAMFILES, "nodejs"),
+      env.LOCALAPPDATA && join(env.LOCALAPPDATA, "fnm", "aliases", "default", "bin"),
+    ].filter(Boolean);
+  }
+  return [
+    join(home, ".local", "bin"),
+    platform === "darwin" ? "/opt/homebrew/bin" : null,
+    "/usr/local/bin",
+    volta,
+    asdf,
+    fnm,
+    platform === "darwin"
+      ? join(home, "Library", "Application Support", "fnm", "aliases", "default", "bin")
+      : join(home, ".local", "share", "fnm", "aliases", "default", "bin"),
+    mise,
+  ].filter(Boolean);
+};
+
+const nvmDefaultBin = (home, exists, readFile) => {
+  let version = "";
+  try {
+    version = String(readFile(path.posix.join(home, ".nvm", "alias", "default")) ?? "").trim();
+  } catch {
+    return null;
+  }
+  if (!/^v\d+\.\d+\.\d+(?:-[A-Za-z0-9.]+)?$/.test(version)) return null;
+  const bin = path.posix.join(home, ".nvm", "versions", "node", version, "bin");
+  try {
+    return exists(bin) ? bin : null;
+  } catch {
+    return null;
+  }
+};
+
+export function desktopToolPath({
+  platform = process.platform,
+  home = homedir(),
+  pathEnv = "",
+  env = {},
+  exists = existsSync,
+  readFile = (file) => readFileSync(file, "utf8"),
+} = {}) {
+  const delimiter = platform === "win32" ? ";" : ":";
+  const current = String(pathEnv).split(delimiter).filter(Boolean);
+  const seen = new Set(platform === "win32" ? current.map((dir) => dir.toLowerCase()) : current);
+  const extras = [];
+  const add = (dir) => {
+    if (!dir) return;
+    const key = platform === "win32" ? dir.toLowerCase() : dir;
+    if (seen.has(key)) return;
+    let present = false;
+    try { present = exists(dir) === true; } catch { present = false; }
+    if (!present) return;
+    extras.push(dir);
+    seen.add(key);
+  };
+  for (const dir of desktopToolDirectories(platform, home, env)) add(dir);
+  if (platform !== "win32") add(nvmDefaultBin(home, exists, readFile));
+  return [...extras, ...current].join(delimiter);
+}
+
+export function createAcpSpawnPlan(input, cwd, deps = {}) {
   const spec = typeof input === "string" ? { command: input, args: [] } : input;
   const command = spec?.command;
   if (typeof command !== "string" || !command.trim() || command.includes("\0")) throw new Error("invalid_command");
@@ -524,6 +598,17 @@ export function createAcpSpawnPlan(input, cwd) {
   if (typeof cwd !== "string" || !cwd.trim()) throw new Error("invalid_workspace");
   const workspace = path.resolve(cwd);
   if (workspace === path.resolve(homedir())) throw new Error("invalid_workspace");
+  const env = { ...(deps.env ?? process.env), ...spec.env };
+  for (const key of spec.unsetEnv ?? []) delete env[key];
+  const pathKey = Object.keys(env).find((key) => key.toLowerCase() === "path") ?? "PATH";
+  env[pathKey] = desktopToolPath({
+    platform: deps.platform ?? process.platform,
+    home: deps.home ?? homedir(),
+    pathEnv: env[pathKey] ?? "",
+    env,
+    exists: deps.exists ?? existsSync,
+    readFile: deps.readFile ?? ((file) => readFileSync(file, "utf8")),
+  });
   return {
     command,
     args: spec.args,
@@ -532,11 +617,7 @@ export function createAcpSpawnPlan(input, cwd) {
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
       shell: false,
-      ...(spec.env || spec.unsetEnv ? { env: (() => {
-        const env = { ...process.env, ...spec.env };
-        for (const key of spec.unsetEnv ?? []) delete env[key];
-        return env;
-      })() } : {}),
+      env,
     },
   };
 }

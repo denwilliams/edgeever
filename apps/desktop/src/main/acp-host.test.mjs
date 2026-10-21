@@ -14,6 +14,7 @@ import {
   classifyAcpFailure,
   createAcpHostRuntime,
   createAcpSpawnPlan,
+  desktopToolPath,
   detectInstalledAgentApps,
   eventsFromSessionUpdate,
   isAuthRequiredError,
@@ -590,6 +591,68 @@ describe("ACP spawn and failure mapping", () => {
     expect(captured.options.shell).toBe(false);
     expect(captured.options.stdio).toEqual(["pipe", "pipe", "pipe"]);
     await rm(workspace, { recursive: true, force: true });
+  });
+
+  test("adds node tool directories so a Dock-launched agent can exec npx", async () => {
+    const workspace = await mkdtemp(path.join(tmpdir(), "edgeever-acp-path-"));
+    const homeDir = "/Users/example";
+    const nvmBin = path.join(homeDir, ".nvm", "versions", "node", "v22.14.0", "bin");
+    const present = new Set(["/opt/homebrew/bin", path.join(homeDir, ".volta", "bin"), nvmBin]);
+    const deps = {
+      platform: "darwin",
+      home: homeDir,
+      env: { PATH: "/usr/bin:/bin", HOME: homeDir },
+      exists: (dir) => present.has(dir),
+      readFile: (file) => {
+        if (file === path.join(homeDir, ".nvm", "alias", "default")) return "v22.14.0\n";
+        throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+      },
+    };
+    try {
+      const plan = createAcpSpawnPlan("/Applications/Antigravity.app/Contents/MacOS/Antigravity", workspace, deps);
+      expect(plan.options.shell).toBe(false);
+      expect(plan.options.env.PATH).toBe(`/opt/homebrew/bin:${path.join(homeDir, ".volta", "bin")}:${nvmBin}:/usr/bin:/bin`);
+      const narrowed = createAcpSpawnPlan({
+        command: "/bin/openclaw",
+        args: ["acp"],
+        env: { PATH: "/custom/bin:/opt/homebrew/bin" },
+      }, workspace, deps);
+      expect(narrowed.options.env.PATH).toBe(`${path.join(homeDir, ".volta", "bin")}:${nvmBin}:/custom/bin:/opt/homebrew/bin`);
+      expect(desktopToolPath({
+        platform: "darwin",
+        home: homeDir,
+        pathEnv: "/usr/bin",
+        exists: () => true,
+        readFile: () => "lts/*",
+      })).toBe([
+        path.join(homeDir, ".local", "bin"),
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        path.join(homeDir, ".volta", "bin"),
+        path.join(homeDir, ".asdf", "shims"),
+        path.join(homeDir, ".fnm", "aliases", "default", "bin"),
+        path.join(homeDir, "Library", "Application Support", "fnm", "aliases", "default", "bin"),
+        path.join(homeDir, ".local", "share", "mise", "shims"),
+        "/usr/bin",
+      ].join(":"));
+      expect(desktopToolPath({
+        platform: "win32",
+        home: "C:\\Users\\example",
+        pathEnv: "C:\\Windows\\System32",
+        env: { APPDATA: "C:\\Users\\example\\AppData\\Roaming", PROGRAMFILES: "C:\\Program Files" },
+        exists: (dir) => dir === "C:\\Program Files\\nodejs",
+        readFile: () => { throw new Error("ENOENT"); },
+      })).toBe("C:\\Program Files\\nodejs;C:\\Windows\\System32");
+      expect(desktopToolPath({
+        platform: "darwin",
+        home: homeDir,
+        pathEnv: "/usr/bin",
+        exists: () => false,
+        readFile: () => "../v1.2.3",
+      })).toBe("/usr/bin");
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
   });
 
   test("maps auth, missing binaries, and strips home paths from details", () => {

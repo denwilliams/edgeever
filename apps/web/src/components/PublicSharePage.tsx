@@ -27,6 +27,7 @@ import {
   getMemoDisplayTitle,
 } from "@edgeever/shared";
 import { resolveSupportedLocale } from "@edgeever/shared/i18n/locales";
+import { activateHeadingAnchorClick } from "@/lib/editor-heading-anchor";
 import { applyEditorBodyFontPreference } from "@/lib/editor-body-font";
 import { createEdgeEverMathematics } from "@edgeever/shared/mathematics";
 import { PdfAttachment } from "@/components/editor/PdfAttachment";
@@ -118,8 +119,12 @@ const SharedRichText = ({ content }: { content: PublicMemoShare["contentJson"] }
     setImagePreview({ alt: target.alt, url: target.currentSrc });
   };
 
+  const jumpToHeading = (event: MouseEvent<HTMLDivElement>) => {
+    activateHeadingAnchorClick(event, editor && !editor.isDestroyed ? editor.view : null);
+  };
+
   return (
-    <div onDoubleClick={previewImage}>
+    <div onClickCapture={jumpToHeading} onDoubleClick={previewImage}>
       <EditorContent editor={editor} />
       {imagePreview ? (
         <Suspense fallback={null}>

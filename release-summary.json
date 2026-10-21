@@ -1,14 +1,17 @@
 {
-  "version": "2.0.2",
+  "version": "2.1.0",
   "changes": {
     "en-US": [
-      "Fix AI generation failing with “undefined is not a function” on Android. Thanks @yulei666 for #630."
+      "In-note Markdown heading links such as [Section](#section-name) scroll to the matching heading in the current note instead of opening a new window. This works in the editor, the phone web editor, and public share pages.",
+      "Desktop agents opened from the Dock, Finder, or Start Menu can find npx and npm when starting configured MCP servers."
     ],
     "zh-CN": [
-      "修复 Android 上 AI 生成立即报错“undefined is not a function”的问题。感谢 @yulei666 的贡献（#630）。"
+      "笔记里的 Markdown 标题链接（例如 [章节](#章节名)）会滚到当前笔记中对应的标题，不再打开新窗口。电脑编辑器、手机网页编辑器和公开分享页都适用。",
+      "从程序坞、访达或开始菜单打开桌面端后，本机 Agent 启动已配置的 MCP 服务时可以找到 npx 和 npm。"
     ],
     "ja": [
-      "Android で AI 生成時に「undefined is not a function」と表示される問題を修正しました。@yulei666 さんの貢献（#630）に感謝します。"
+      "ノート内の Markdown 見出しリンク（例: [章](#章名)）は、新しいウィンドウを開かず、今開いているノートの対応する見出しへ移動します。エディタ、スマホ向け Web エディタ、公開共有ページで有効です。",
+      "Dock、Finder、スタートメニューから開いたデスクトップ版でも、ローカル Agent が設定済みの MCP サーバーを起動するときに npx と npm を見つけられます。"
     ]
   }
 }
