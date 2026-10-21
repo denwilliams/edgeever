@@ -1661,7 +1661,12 @@ function AiSidebarSession({
               </Message>
               <Message from="assistant">
                 {turn.reasoning.trim() || turn.tools.length ? (
-                  <AiSidebarLocalProcess reasoning={turn.reasoning} tools={turn.tools} running={turn.status === "running"} />
+                  <AiSidebarLocalProcess
+                    reasoning={turn.reasoning}
+                    tools={turn.tools}
+                    running={turn.status === "running"}
+                    answering={turn.response.trim().length > 0 || turn.images.length > 0}
+                  />
                 ) : turn.status === "running" ? (
                   <p role="status" className="flex items-center gap-2 text-xs text-slate-500">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
