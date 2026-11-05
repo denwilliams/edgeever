@@ -4,10 +4,17 @@ import {
   DEFAULT_NOTE_PROSE_LINE_HEIGHT,
   flattenDetailsForLinearHtml,
   NOTE_PROSE_HEADING_SCALE,
-  NOTE_PROSE_PARAGRAPH_SPACING_PX,
   noteProseCodeFontSize,
+  noteProseStyleCssVariables,
+  parseNoteProseParagraphSpacing,
+  parseNoteProseTextAlign,
+  parseNoteProseLetterSpacing,
+  parseNoteProseEmphasisStyle,
+  parseNoteProseHeadingStyle,
   parseNoteProseLineHeight,
+  parseNoteProseQuoteStyle,
   type NoteProsePaletteColors,
+  type NoteProseStylePreferences,
 } from "@edgeever/shared";
 import katex from "katex";
 import "katex/contrib/mhchem";
@@ -15,17 +22,19 @@ import { common, createLowlight } from "lowlight";
 import { toCanvas } from "html-to-image";
 import { marked } from "marked";
 import { MERMAID_THEME_PALETTES } from "@/components/ThemeProvider";
-import { scaleMermaidSvg } from "@/lib/mermaid-svg";
+import { renderThemedMermaidSvg } from "@/lib/mermaid-renderer";
+import { normalizeMermaidSvgForViewer } from "@/lib/mermaid-svg";
 import { copyHtmlToClipboard } from "@/lib/clipboard";
 import { parseCustomCssToStyles } from "@/lib/css-sandbox";
+import {
+  DEFAULT_NOTE_PROSE_STYLE_PREFERENCES,
+  readNoteProseStylePreference,
+} from "@/lib/note-prose-style-preference";
 
-const PARAGRAPH_SPACING = `${NOTE_PROSE_PARAGRAPH_SPACING_PX}px`;
 const PUBLISH_FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans SC', sans-serif";
 const PUBLISH_MONO = "'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace";
 const BODY_COLOR = "#27272a";
 const QUOTE_COLOR = "#3d4450";
-const CODE_COLOR = "#3d4450";
-const CODE_BACKGROUND = "#e9edf1";
 const LINK_COLOR = "#404040";
 const CHECKED_TASK_COLOR = "#737373";
 
@@ -54,30 +63,64 @@ const applyLegacyWeChatStyles = (
   metrics: WeChatMetrics,
   colors: NoteProsePaletteColors | null,
   _accentOnly = false,
+  proseStyle: NoteProseStylePreferences = DEFAULT_NOTE_PROSE_STYLE_PREFERENCES,
 ) => {
+  const rhythm = noteProseStyleCssVariables(proseStyle);
   const fontSize = `${metrics.fontSize}px`;
   const lineHeight = String(metrics.lineHeight);
   const codeSize = `${noteProseCodeFontSize(metrics.fontSize)}px`;
-  // A named hue recolors links, inline code, and bold, matching the editor.
+  // A named hue recolors links and bold, matching the editor. Inline code stays neutral cool gray.
   const link = colors?.link ?? LINK_COLOR;
-  const inlineCodeColor = colors?.codeText ?? CODE_COLOR;
-  const inlineCodeBackground = colors?.codeBackground ?? CODE_BACKGROUND;
-  const inlineCodeShadow = colors
-    ? "box-shadow: inset 0 0 0 1px rgba(0,0,0,0.06);"
-    : "box-shadow: inset 0 0 0 1px rgba(61,68,80,0.08);";
-  const accent = colors?.accent ?? BODY_COLOR;
+  const inlineCodeColor = "#1f2937";
+  const inlineCodeBackground = "#f3f4f6";
+  const accent = colors?.accent ?? "#374151";
+  const surface = colors?.surface ?? "#f3f4f6";
+  const divider = colors?.divider ?? "#d1d5db";
   const bold = colors ? `font-weight: 800; color: ${accent};` : "font-weight: 800;";
-  const thBackground = colors ? colors.surface : "#f5f5f5";
-  const textStyle = `font-family: ${PUBLISH_FONT}; font-size: ${fontSize}; line-height: ${lineHeight}; letter-spacing: -0.005em; color: ${BODY_COLOR};`;
+  const thBackground = colors ? colors.accent : "#f3f4f6";
+  const thColor = colors ? "#ffffff" : "#111827";
+  const textStyle = `font-family: ${PUBLISH_FONT}; font-size: ${fontSize}; line-height: ${lineHeight}; letter-spacing: ${rhythm["--editor-body-letter-spacing"]}; color: ${BODY_COLOR};`;
+  const h2Base = headingStyle("h2", metrics);
+  const h3Base = headingStyle("h3", metrics);
+  const h2Style = proseStyle.headingStyle === "bar"
+    ? `${h2Base.replace(/padding:\s*0;/, "padding: 0 0 0 10px;")} border-left: 4px solid ${accent};`
+    : proseStyle.headingStyle === "numbered"
+      ? "margin: 36px 0 24px; padding: 0; font-size: 0; line-height: 1.35;"
+      : h2Base;
+  const h3Style = proseStyle.headingStyle === "bar"
+    ? `${h3Base.replace(/padding:\s*0;/, "padding: 0 0 0 8px;")} border-left: 3px solid ${accent};`
+    : proseStyle.headingStyle === "numbered"
+      ? `margin: 1.6em 0 0.6em; padding: 0; font-family: ${PUBLISH_FONT}; font-size: ${Math.round(metrics.fontSize * 1.15)}px; font-weight: 700; line-height: 1.4; letter-spacing: -0.01em; color: #111827; text-align: left;`
+      : h3Base;
+  const h4Style = proseStyle.headingStyle === "numbered"
+    ? `display: inline-block; margin: 16px 0 8px; padding: 1px 6px; border-radius: 3px; background: #fde68a; color: #111827; font-family: ${PUBLISH_FONT}; font-size: ${fontSize}; font-weight: 800; line-height: 1.5;`
+    : headingStyle("h4", metrics);
+  const blockquoteStyle = proseStyle.quoteStyle === "dashed"
+    ? `margin: 0 0 20px; padding: 12px 16px; border: 1px dashed #d1d5db; border-radius: 8px; background: #f9fafb; color: ${QUOTE_COLOR}; font-family: ${PUBLISH_FONT}; line-height: ${lineHeight};`
+    : proseStyle.quoteStyle === "accent-bar"
+      ? `margin: 0 0 16px; padding: 12px 16px; border: 0; border-left: 3px solid ${accent}; border-radius: 0 6px 6px 0; background: ${surface}; color: ${QUOTE_COLOR}; font-family: ${PUBLISH_FONT}; line-height: ${lineHeight};`
+      : proseStyle.quoteStyle === "minimal-rule"
+        ? `margin: 0 0 16px; padding: 12px 4px; border: 0; border-top: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb; border-radius: 0; background: transparent; color: ${QUOTE_COLOR}; font-family: ${PUBLISH_FONT}; line-height: ${lineHeight};`
+        : `margin: 0 0 16px; padding: 12px 16px; border: 0; border-radius: 8px; background: #f3f5f7; color: ${QUOTE_COLOR}; font-family: ${PUBLISH_FONT}; line-height: ${lineHeight};`;
+  const preStyle = proseStyle.quoteStyle === "dashed"
+    ? `margin: 0 0 20px; padding: 14px 18px; overflow: hidden; border: 0; border-left: 3px solid ${accent}; border-radius: 0 8px 8px 0; background: #f9fafb; color: #0f172a; font-family: ${PUBLISH_MONO}; font-size: ${codeSize}; line-height: 1.75; text-align: left; white-space: pre-wrap;`
+    : `margin: 0 0 16px; padding: 14px 16px; overflow: hidden; border: 1px solid #e4e4e4; border-radius: 8px; background: #fafafa; color: #0f172a; font-family: ${PUBLISH_MONO}; font-size: ${codeSize}; line-height: 1.6; text-align: left; white-space: pre-wrap;`;
+  // Match the editor header size and keep paragraph defaults out of table cells.
+  const tableHeaderSize = "13.44px";
+  const accentGradient = `background-color: ${accent}; background-image: linear-gradient(135deg, rgba(255,255,255,0), rgba(255,255,255,0.2));`;
+  const thStyle = `padding: 8px 13px; border: 1px solid #e5e5e5; background: ${thBackground}; color: ${thColor}; font-weight: 700; font-size: ${tableHeaderSize}; text-align: left; vertical-align: top;`;
+  const imgStyle =
+    "display: block; max-width: 100%; height: auto; margin: 16px 0; padding: 6px; box-sizing: border-box; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 4px 12px -2px rgba(0,0,0,0.08);";
+  const paragraphBottom = rhythm["--editor-paragraph-spacing"];
   const styles: Record<string, string> = {
-    p: `margin: 0 0 ${PARAGRAPH_SPACING}; padding: 0; ${textStyle}`,
+    p: `margin: 0 0 ${paragraphBottom}; padding: 0; text-align: ${rhythm["--editor-body-text-align"]}; ${textStyle}`,
     h1: headingStyle("h1", metrics),
-    h2: headingStyle("h2", metrics),
-    h3: headingStyle("h3", metrics),
-    h4: headingStyle("h4", metrics),
+    h2: h2Style,
+    h3: h3Style,
+    h4: h4Style,
     h5: headingStyle("h5", metrics),
     h6: headingStyle("h6", metrics),
-    blockquote: `margin: 0 0 16px; padding: 12px 16px; border: 0; border-radius: 8px; background: #f3f5f7; color: ${QUOTE_COLOR}; font-family: ${PUBLISH_FONT}; line-height: ${lineHeight};`,
+    blockquote: blockquoteStyle,
     ul: `margin: 0 0 16px; padding-left: 24px; line-height: ${lineHeight}; list-style-type: disc;`,
     ol: `margin: 0 0 16px; padding-left: 24px; line-height: ${lineHeight}; list-style-type: decimal;`,
     li: `margin: 4px 0; line-height: ${lineHeight}; ${textStyle}`,
@@ -86,13 +129,21 @@ const applyLegacyWeChatStyles = (
     b: bold,
     em: "font-style: italic;",
     del: "text-decoration: line-through;",
-    code: `padding: 1px 4px; border: 0; border-radius: 4px; background: ${inlineCodeBackground}; ${inlineCodeShadow} color: ${inlineCodeColor}; font-family: ${PUBLISH_MONO}; font-size: ${codeSize}; font-weight: 400;`,
-    pre: `margin: 0 0 16px; padding: 14px 16px; overflow: hidden; border: 1px solid #e4e4e4; border-radius: 8px; background: #fafafa; color: #0f172a; font-family: ${PUBLISH_MONO}; font-size: ${codeSize}; line-height: 1.6; text-align: left; white-space: pre-wrap;`,
-    hr: "margin: 24px 0; border: 0; border-top: 1px solid #1a1d21;",
+    ...(proseStyle.emphasisStyle === "marker"
+      ? {
+          u: `text-decoration: none; border-bottom: 2px solid ${divider}; padding-bottom: 1px; color: ${BODY_COLOR}; font-weight: 600;`,
+          mark: "background-color: #fde68a; color: #111827; padding: 1px 4px; border-radius: 2px; font-weight: 600;",
+        }
+      : {}),
+    code: `padding: 2px 6px; border: 0; border-radius: 4px; background: ${inlineCodeBackground}; color: ${inlineCodeColor}; font-family: ${PUBLISH_MONO}; font-size: ${codeSize}; font-weight: 600;`,
+    pre: preStyle,
+    hr: proseStyle.headingStyle === "numbered"
+      ? "margin: 28px 0; border: 0; border-top: 1px solid #e5e7eb;"
+      : "margin: 24px 0; border: 0; border-top: 1px solid #1a1d21;",
     table: `width: 100%; margin: 20px 0; border-collapse: collapse; font-size: ${fontSize}; line-height: 1.45;`,
-    th: `padding: 8px 13px; border: 1px solid #e5e5e5; background: ${thBackground}; color: #0f172a; font-weight: 600; font-size: 13px; text-align: left;`,
-    td: `padding: 8px 13px; border: 1px solid #e5e5e5; color: ${BODY_COLOR}; text-align: left;`,
-    img: "display: block; max-width: 100%; height: auto; margin: 16px 0; border: 1px solid #b8dfd0; border-radius: 8px;",
+    th: thStyle,
+    td: `padding: 8px 13px; border: 1px solid #e5e5e5; color: ${BODY_COLOR}; text-align: left; vertical-align: top;`,
+    img: imgStyle,
   };
 
   root.style.cssText = `${textStyle} background-color: #ffffff; word-break: break-word;`;
@@ -104,7 +155,10 @@ const applyLegacyWeChatStyles = (
     const isMergeDivider =
       tagName === "hr" && element.matches("[data-edgeever-merge-divider], .edgeever-merge-divider");
     const quoted = (tagName === "p" || tagName === "li") && element.closest("blockquote");
-    const baseStyle = styles[tagName] || "";
+    const cell = tagName === "p" ? element.closest("th, td") : null;
+    const baseStyle = cell
+      ? `margin: 0; padding: 0; font-family: ${PUBLISH_FONT}; font-size: ${cell.tagName.toLowerCase() === "th" ? tableHeaderSize : fontSize}; line-height: 1.45; text-align: inherit; letter-spacing: inherit; color: ${cell.tagName.toLowerCase() === "th" ? thColor : BODY_COLOR};`
+      : styles[tagName] || "";
     // One color declaration. A second `color` later in the attribute is easy for WeChat to drop.
     const style = isMergeDivider
       ? "margin: 24px 0; border: 0; border-top: 2px solid #1a1d21;"
@@ -114,21 +168,127 @@ const applyLegacyWeChatStyles = (
     if (style) element.style.cssText = `${style}${element.style.cssText}`;
   });
 
+  if (proseStyle.emphasisStyle === "marker") {
+    root.querySelectorAll<HTMLElement>("p > strong, p > b, li > strong, li > b").forEach((element) => {
+      if (element.closest("td, th, h1, h2, h3, h4, h5, h6")) return;
+      element.style.cssText = `${element.style.cssText}; border-bottom: 2px solid ${divider}; padding-bottom: 1px;`;
+    });
+    root.querySelectorAll<HTMLElement>("blockquote strong, blockquote b").forEach((element) => {
+      element.style.cssText = `${element.style.cssText}; color: ${accent}; font-weight: 700; border-bottom: 3px solid #fde68a; padding-bottom: 2px;`;
+    });
+  }
+
+  if (proseStyle.showMagazineCover) {
+    root.querySelectorAll<HTMLElement>("h1").forEach((heading) => {
+      if (heading.querySelector("[data-ee-cover-card]")) return;
+      const titleHtml = heading.innerHTML;
+      heading.style.cssText = `margin: 0 0 28px; padding: 0; background: #ffffff; border: 1.5px solid ${divider}; border-radius: 20px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.06);`;
+      heading.innerHTML = [
+        `<section data-ee-publish-chrome="true" data-ee-cover-card="true" style="padding: 28px 24px 22px;">`,
+        `<section data-ee-publish-chrome="true" style="margin-bottom: 18px; font-size: 0;">`,
+        `<span data-ee-publish-chrome="true" style="display: inline-block; width: 6px; height: 6px; background: ${accent}; border-radius: 50%; vertical-align: middle;"><span leaf=""><br></span></span>`,
+        `<span data-ee-publish-chrome="true" style="display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 3px; color: ${accent}; vertical-align: middle; margin-left: 8px;">FEATURED · 深度实测</span>`,
+        `</section>`,
+        `<p data-ee-publish-chrome="true" style="font-size: ${metrics.fontSize * 1.75}px; font-weight: 900; color: #111827; margin: 0 0 14px; line-height: 1.2; letter-spacing: -0.5px;">${titleHtml}</p>`,
+        `<section data-ee-publish-chrome="true" style="width: 48px; height: 3px; background: ${accent}; border-radius: 2px;"><span leaf=""><br></span></section>`,
+        `</section>`,
+        `<section data-ee-publish-chrome="true" style="${colors ? accentGradient : "background: #f3f4f6;"} padding: 10px 24px; font-size: 0;">`,
+        `<span data-ee-publish-chrome="true" style="display: inline-block; font-size: 11px; color: ${colors ? "rgba(255,255,255,0.92)" : "#374151"}; font-weight: 600; letter-spacing: 0.8px; vertical-align: middle;">EDGEEVER · 精选笔记</span>`,
+        `</section>`,
+      ].join("");
+    });
+
+    const h2ListForToc = Array.from(root.querySelectorAll<HTMLElement>("h2"));
+    if (h2ListForToc.length >= 2 && !root.querySelector("[data-ee-toc-cards]")) {
+      const toc = document.createElement("section");
+      toc.setAttribute("data-ee-publish-chrome", "true");
+      toc.setAttribute("data-ee-toc-cards", "true");
+      toc.style.cssText = "margin: 0 0 28px;";
+      const cardsHtml = h2ListForToc.map((heading, index) => {
+        const num = String(index + 1).padStart(2, "0");
+        const rawText = (heading.textContent || "")
+          .replace(/^\s*(?:第[一二三四五六七八九十百\d]+[章节部分篇]\s*[：:·.\s]*|\d+\s*[.、·:：]\s*|[一二三四五六七八九十]+\s*[、.．]\s*)/u, "")
+          .trim();
+        const shortTitle = rawText.slice(0, 6) || `章节 ${num}`;
+        const subTitle = rawText.length > 6 ? rawText.slice(6, 18) : `PART ${num}`;
+        const isHighlighted = index < h2ListForToc.length - 1 || h2ListForToc.length === 2 && index === 0;
+        const useAccentGradient = isHighlighted && Boolean(colors);
+        if (useAccentGradient) {
+          return [
+            `<section data-ee-publish-chrome="true" style="display: inline-block; vertical-align: top; width: 136px; flex-shrink: 0; box-sizing: border-box; border: 1px solid transparent; ${accentGradient} border-radius: 12px; padding: 12px; margin: 0 8px 8px 0;">`,
+            `<p data-ee-publish-chrome="true" style="font-size: 9px; line-height: 1.4; font-weight: 700; color: rgba(255,255,255,0.72); letter-spacing: 1px; margin: 0 0 5px;">${num}</p>`,
+            `<p data-ee-publish-chrome="true" style="font-size: 13px; font-weight: 800; color: #ffffff; margin: 0 0 3px; line-height: 1.3;">${shortTitle}</p>`,
+            `<p data-ee-publish-chrome="true" style="font-size: 10px; color: rgba(255,255,255,0.75); margin: 0; line-height: 1.4; word-break: break-word;">${subTitle}</p>`,
+            `</section>`,
+          ].join("");
+        }
+        return [
+          `<section data-ee-publish-chrome="true" style="display: inline-block; vertical-align: top; width: 136px; flex-shrink: 0; box-sizing: border-box; background: ${isHighlighted ? "#f3f4f6" : "#ffffff"}; border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px; margin: 0 8px 8px 0;">`,
+          `<p data-ee-publish-chrome="true" style="font-size: 9px; line-height: 1.4; font-weight: 700; color: #6b7280; letter-spacing: 1px; margin: 0 0 5px;">${num}</p>`,
+          `<p data-ee-publish-chrome="true" style="font-size: 13px; font-weight: 800; color: #111827; margin: 0 0 3px; line-height: 1.3;">${shortTitle}</p>`,
+          `<p data-ee-publish-chrome="true" style="font-size: 10px; color: #6b7280; margin: 0; line-height: 1.4; word-break: break-word;">${subTitle}</p>`,
+          `</section>`,
+        ].join("");
+      }).join("");
+      toc.innerHTML = [
+        `<section data-ee-publish-chrome="true" style="margin-bottom: 10px;">`,
+        `<p data-ee-publish-chrome="true" style="font-size: 10px; color: #9ca3af; margin: 0; text-transform: uppercase; letter-spacing: 2px; font-weight: 600;">${h2ListForToc.length} PARTS · 全文导览</p>`,
+        `</section>`,
+        `<section data-ee-publish-chrome="true" style="display: flex; flex-wrap: wrap; align-items: stretch; font-size: 0;">${cardsHtml}</section>`,
+      ].join("");
+      h2ListForToc[0].parentElement?.insertBefore(toc, h2ListForToc[0]);
+    }
+  }
+
+  if (proseStyle.headingStyle === "numbered") {
+    const h2List = Array.from(root.querySelectorAll<HTMLElement>("h2"));
+    h2List.forEach((heading) => {
+      const prev = heading.previousElementSibling;
+      if (prev && prev.tagName === "HR") {
+        prev.remove();
+      }
+    });
+
+    h2List.forEach((heading, index) => {
+      if (heading.querySelector("[data-ee-heading-number]")) return;
+      const num = String(index + 1).padStart(2, "0");
+      const isLast = h2List.length > 1 && index === h2List.length - 1;
+      const partLabel = isLast ? "LAST" : "PART";
+      const subLabel = isLast ? "SUMMARY" : `SECTION ${num}`;
+      const titleHtml = heading.innerHTML;
+      heading.innerHTML = [
+        `<section data-ee-publish-chrome="true" data-ee-heading-number="true" style="display: inline-block; vertical-align: middle; text-align: center; width: 52px;">`,
+        `<p data-ee-publish-chrome="true" style="margin: 0; font-size: 28px; font-weight: 900; color: ${accent}; line-height: 1; letter-spacing: -2px;">${num}</p>`,
+        `<p data-ee-publish-chrome="true" style="margin: 2px 0 0; font-size: 8px; font-weight: 700; color: #d1d5db; letter-spacing: 2px; line-height: 1;">${partLabel}</p>`,
+        `</section>`,
+        `<span data-ee-publish-chrome="true" style="display: inline-block; width: 1px; height: 36px; background: #e5e7eb; vertical-align: middle; margin: 0 16px;"><span leaf=""><br></span></span>`,
+        `<section data-ee-publish-chrome="true" style="display: inline-block; vertical-align: middle; max-width: calc(100% - 86px);">`,
+        `<p data-ee-publish-chrome="true" style="margin: 0; font-size: ${metrics.fontSize * 1.4}px; font-weight: 900; color: #111827; letter-spacing: 0.3px; line-height: 1.3;">${titleHtml}</p>`,
+        `<p data-ee-publish-chrome="true" style="margin: 3px 0 0; font-size: 11px; font-weight: 600; color: #9ca3af; letter-spacing: 1px; line-height: 1.3;">${subLabel}</p>`,
+        `</section>`,
+      ].join("");
+    });
+  }
+
   root.querySelectorAll<HTMLElement>("pre code").forEach((element) => {
     element.style.cssText = `padding: 0; border: 0; background: transparent; color: inherit; font-family: ${PUBLISH_MONO}; font-size: ${codeSize}; font-weight: 400; white-space: pre-wrap;`;
   });
 
-  if (colors) {
-    root.querySelectorAll<HTMLElement>("table").forEach((table) => {
-      table.querySelectorAll<HTMLElement>("tbody tr").forEach((tr, index) => {
-        if (index % 2 === 1) {
-          tr.querySelectorAll<HTMLElement>("td").forEach((td) => {
-            td.style.backgroundColor = colors.surface;
-          });
-        }
-      });
+  root.querySelectorAll<HTMLElement>("table").forEach((table) => {
+    table.querySelectorAll<HTMLElement>("tbody tr").forEach((tr, index) => {
+      if (index % 2 === 1) {
+        tr.querySelectorAll<HTMLElement>("td").forEach((td) => {
+          td.style.backgroundColor = "#f9fafb";
+        });
+      }
     });
-  }
+    table.querySelectorAll<HTMLElement>("th strong, th b").forEach((el) => {
+      el.style.color = thColor;
+    });
+    table.querySelectorAll<HTMLElement>("td strong, td b").forEach((el) => {
+      el.style.color = "#111827";
+    });
+  });
 };
 
 const applyInlineStyles = (
@@ -137,8 +297,9 @@ const applyInlineStyles = (
   colors: NoteProsePaletteColors | null,
   customCss?: string,
   accentOnly = false,
+  proseStyle: NoteProseStylePreferences = DEFAULT_NOTE_PROSE_STYLE_PREFERENCES,
 ) => {
-  applyLegacyWeChatStyles(root, metrics, colors, accentOnly);
+  applyLegacyWeChatStyles(root, metrics, colors, accentOnly, proseStyle);
 
   const customStyles = customCss ? parseCustomCssToStyles(customCss) : null;
   if (!customStyles) return;
@@ -255,12 +416,6 @@ const getSvgSize = (svg: string) => {
 
 const WECHAT_MERMAID_MAX_EDGE = 1280;
 
-const prepareSvgMarkup = (svg: string) => {
-  const markup = svg.trim();
-  if (/<svg\b[^>]*\sxmlns=/.test(markup)) return markup;
-  return markup.replace(/<svg\b/, '<svg xmlns="http://www.w3.org/2000/svg"');
-};
-
 const canvasToJpeg = (canvas: HTMLCanvasElement, quality = 0.86) =>
   new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(
@@ -319,48 +474,39 @@ const rasterizePublishOrnamentsForWeChat = async (root: HTMLElement) => {
 };
 
 const svgToWeChatImage = async (svg: string) => {
-  const markup = prepareSvgMarkup(svg);
+  const markup = normalizeMermaidSvgForViewer(svg);
   const size = getSvgSize(markup);
-  const objectUrl = URL.createObjectURL(new Blob([markup], { type: "image/svg+xml;charset=utf-8" }));
-  try {
-    const image = new Image();
-    image.src = objectUrl;
-    await image.decode();
-    const naturalWidth = image.naturalWidth || size.width;
-    const naturalHeight = image.naturalHeight || size.height;
-    const scale = Math.min(2, WECHAT_MERMAID_MAX_EDGE / Math.max(naturalWidth, naturalHeight, 1));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(naturalWidth * scale));
-    canvas.height = Math.max(1, Math.round(naturalHeight * scale));
-    const context = canvas.getContext("2d");
-    if (!context) {
-      throw new Error("Could not create image canvas");
-    }
-    context.fillStyle = "#ffffff";
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    const displayWidth = Math.min(size.width || naturalWidth, 677);
-    const displayHeight = displayWidth * (naturalHeight / Math.max(naturalWidth, 1));
-    return {
-      blob: await canvasToJpeg(canvas),
-      width: displayWidth,
-      height: displayHeight,
-    };
-  } finally {
-    URL.revokeObjectURL(objectUrl);
+  const image = new Image();
+  // A Blob URL can taint the canvas when Mermaid uses HTML labels.
+  image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`;
+  await image.decode();
+  const naturalWidth = image.naturalWidth || size.width;
+  const naturalHeight = image.naturalHeight || size.height;
+  const scale = Math.min(2, WECHAT_MERMAID_MAX_EDGE / Math.max(naturalWidth, naturalHeight, 1));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(naturalWidth * scale));
+  canvas.height = Math.max(1, Math.round(naturalHeight * scale));
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("Could not create image canvas");
   }
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  const displayWidth = Math.min(size.width || naturalWidth, 677);
+  const displayHeight = displayWidth * (naturalHeight / Math.max(naturalWidth, 1));
+  return {
+    blob: await canvasToJpeg(canvas),
+    width: displayWidth,
+    height: displayHeight,
+  };
 };
 
-const renderMermaidSvg = async (source: string) => {
-  const { renderMermaidSVG, THEMES } = await import("beautiful-mermaid");
-  return scaleMermaidSvg(renderMermaidSVG(source, {
-    ...THEMES["zinc-light"],
-    ...MERMAID_THEME_PALETTES["zinc-light"],
-    transparent: true,
-    font: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
-    padding: 24,
-  }));
-};
+const renderMermaidSvg = (source: string) => renderThemedMermaidSvg(source, {
+  palette: MERMAID_THEME_PALETTES["zinc-light"],
+  font: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+  padding: 24,
+});
 
 const embedMermaidForWeChat = async (root: HTMLElement, editor?: Editor) => {
   const codeBlocks = Array.from(root.querySelectorAll<HTMLElement>("pre > code.language-mermaid"));
@@ -1085,12 +1231,26 @@ export const readEditorCopyContext = (from?: HTMLElement | null) => {
     }
   }
   const customStyleTag = container?.querySelector<HTMLStyleElement>("style[data-theme-custom-css]");
+  const storedStyle = readNoteProseStylePreference();
+  const proseStyle: NoteProseStylePreferences = {
+    paragraphSpacing: parseNoteProseParagraphSpacing(readCssNumber(style?.getPropertyValue("--editor-paragraph-spacing"), storedStyle.paragraphSpacing)) ?? storedStyle.paragraphSpacing,
+    textAlign: parseNoteProseTextAlign(style?.getPropertyValue("--editor-body-text-align").trim()) ?? storedStyle.textAlign,
+    letterSpacing: parseNoteProseLetterSpacing(style?.getPropertyValue("--editor-body-letter-spacing").trim()) ?? storedStyle.letterSpacing,
+    headingStyle: parseNoteProseHeadingStyle(container?.dataset.noteHeadingStyle) ?? storedStyle.headingStyle,
+    quoteStyle: parseNoteProseQuoteStyle(container?.dataset.noteQuoteStyle) ?? storedStyle.quoteStyle,
+    emphasisStyle: parseNoteProseEmphasisStyle(container?.dataset.noteEmphasisStyle) ?? storedStyle.emphasisStyle,
+    showMagazineCover: container?.dataset.noteMagazineCover !== undefined
+      ? container.dataset.noteMagazineCover === "true"
+      : storedStyle.showMagazineCover,
+  };
   return {
     fontSize,
     lineHeight,
     colors,
     accentOnly: Boolean(palette && palette !== "native"),
     customCss: customStyleTag?.dataset.originalCss || "",
+    proseStyle,
+    noteTitle: container?.dataset.noteTitle?.trim() || "",
   };
 };
 
@@ -1102,6 +1262,11 @@ export const preparePublishArticle = (
   root.innerHTML = html;
   flattenDetailsForLinearHtml(root);
   const context = readEditorCopyContext(from);
+  if (context.proseStyle.showMagazineCover && context.noteTitle && !root.querySelector("h1")) {
+    const coverH1 = document.createElement("h1");
+    coverH1.textContent = context.noteTitle;
+    root.insertBefore(coverH1, root.firstChild);
+  }
   const metrics = { fontSize: context.fontSize, lineHeight: context.lineHeight };
   applyInlineStyles(
     root,
@@ -1109,6 +1274,7 @@ export const preparePublishArticle = (
     context.colors,
     context.customCss,
     context.accentOnly,
+    context.proseStyle,
   );
   replaceMathNodes(root, metrics);
   convertTaskLists(root, context.colors?.accent ?? null);

@@ -1,3 +1,4 @@
+import type { ImportMemosInput, ImportMemosResponse } from "@edgeever/shared/note-import/types";
 import type { NotebookUpdateInput } from "@edgeever/shared";
 import {
   parsePreparedAiGeneration,
@@ -20,6 +21,15 @@ import type {
   ApiToken,
   AuthSession,
   LoginInput,
+  LoginMfaInput,
+  MfaChallenge,
+  TotpBatchConfirmInput,
+  TotpConfirmResponse,
+  TotpReauthInput,
+  TotpRecoveryCodesResponse,
+  TotpSetupResponse,
+  TotpSetupVerifyInput,
+  TotpStatus,
   LoginDeviceSession,
   InstanceUser,
   CreatedApiToken,
@@ -65,6 +75,9 @@ import type {
   AiTranscriptionStandard,
   AiPromptTemplate,
   AiPromptTemplateCreateInput,
+  AiModelConfigUpdateInput,
+  AiModelCapabilities,
+  AiModelCapabilityLimits,
   AiPromptTemplateUpdateInput,
   AiStreamEvent,
   AiGenerateInput,
@@ -109,6 +122,9 @@ export type MultipartResourceUploadSource = {
   mimeType: string;
   byteSize: number;
   readPart: (start: number, end: number) => Promise<Blob | Uint8Array<ArrayBuffer>>;
+  /** Importers use this to distinguish an uncertain commit from a failed part. */
+  onBeforeComplete?: () => void | Promise<void>;
+  onPartUploaded?: (byteSize: number) => void;
 };
 
 export type InstanceHealth = {
@@ -146,7 +162,7 @@ export type ListNotebooksResponse = {
 
 export type ListMemosResponse = {
   memos: MemoSummary[];
-  totalCount: number;
+  totalCount?: number;
   nextCursor: string | null;
 };
 
@@ -276,8 +292,9 @@ export type ResourceUploadResponse = {
 export type MarkdownExportPage = {
   memos: MemoDetail[];
   resources: Resource[];
-  totalCount: number;
+  totalCount?: number;
   nextOffset: number | null;
+  nextCursor?: string | null;
 };
 
 export type JsonBackupPage = MarkdownExportPage & {
@@ -348,6 +365,22 @@ export class ApiRequestError extends Error {
     this.responseDiagnostics = responseDiagnostics;
   }
 }
+
+/** The second-step challenge carried by a 401 `mfa_required` login error. */
+export const getMfaChallenge = (error: unknown): MfaChallenge | null => {
+  if (!(error instanceof ApiRequestError) || error.status !== 401 || error.code !== "mfa_required") return null;
+  const details = error.details as Partial<MfaChallenge> | undefined;
+  if (!details || typeof details.challengeToken !== "string" || !details.challengeToken) return null;
+  return {
+    challengeToken: details.challengeToken,
+    expiresAt: typeof details.expiresAt === "string" ? details.expiresAt : "",
+    methods: Array.isArray(details.methods) ? details.methods : ["totp", "recovery_code"],
+  };
+};
+
+/** A recovery-code session hit a business route before rebinding TOTP. */
+export const isMfaRebindRequiredError = (error: unknown) =>
+  error instanceof ApiRequestError && error.status === 403 && error.code === "mfa_rebind_required";
 
 export type ApiResponseDiagnostics = {
   cloudflareMitigated: boolean;
@@ -530,6 +563,7 @@ export const createEdgeEverClient = (options: EdgeEverClientOptions = {}) => {
                 body: chunk,
               },
             );
+            source.onPartUploaded?.(Math.min(partNumber * upload.partSize, source.byteSize));
             break;
           } catch (error) {
             attempt += 1;
@@ -542,6 +576,7 @@ export const createEdgeEverClient = (options: EdgeEverClientOptions = {}) => {
           }
         }
       }
+      await source.onBeforeComplete?.();
       return await request<ResourceResponse>(
         `/api/v1/resource-uploads/${encodeURIComponent(upload.id)}/complete`,
         { method: "POST", body: JSON.stringify({}) },
@@ -837,6 +872,55 @@ export const createEdgeEverClient = (options: EdgeEverClientOptions = {}) => {
         body: JSON.stringify(payload),
       }),
 
+    /** Second login step after `login` rejected with `getMfaChallenge(error)`. */
+    completeMfaLogin: (payload: LoginMfaInput) =>
+      request<AuthSession>("/api/v1/auth/login/mfa", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+
+    getTotpStatus: () => request<TotpStatus>("/api/v1/auth/totp"),
+
+    /** Starts enabling (password) or rebinding (password + code; none when restricted). */
+    startTotpSetup: (payload: TotpReauthInput) =>
+      request<TotpSetupResponse>("/api/v1/auth/totp/setup", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+
+    /** Step 2: the code for the setup this client was shown (`setupId` from `startTotpSetup`). */
+    verifyTotpSetup: (payload: TotpSetupVerifyInput) =>
+      request<TotpRecoveryCodesResponse>("/api/v1/auth/totp/setup/verify", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+
+    /** Last step: activates exactly the batch the user saved (`batchId` from `verifyTotpSetup`). */
+    confirmTotpSetup: (payload: TotpBatchConfirmInput) =>
+      request<TotpConfirmResponse>("/api/v1/auth/totp/setup/confirm", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+
+    regenerateRecoveryCodes: (payload: TotpReauthInput) =>
+      request<TotpRecoveryCodesResponse>("/api/v1/auth/totp/recovery-codes", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+
+    /** Activates exactly the batch from `regenerateRecoveryCodes`; a replaced batch answers 409. */
+    confirmRecoveryCodes: (payload: TotpBatchConfirmInput) =>
+      request<{ ok: true }>("/api/v1/auth/totp/recovery-codes/confirm", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+
+    disableTotp: (payload: TotpReauthInput) =>
+      request<{ ok: true }>("/api/v1/auth/totp/disable", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+
     changePassword: (payload: { currentPassword: string; newPassword: string; confirmPassword: string }) =>
       request<{ ok: true }>("/api/v1/auth/change-password", {
         method: "POST",
@@ -963,6 +1047,13 @@ export const createEdgeEverClient = (options: EdgeEverClientOptions = {}) => {
     addAiModel: (providerConfigId: string, payload: { modelId: string; displayName?: string }) =>
       request<AiSettings>(`/api/v1/ai/providers/${encodeURIComponent(providerConfigId)}/models`, {
         method: "POST",
+        body: JSON.stringify(payload),
+      }),
+
+    /** Omitted fields keep their value; `null` restores the default budget. */
+    updateAiModel: (providerConfigId: string, modelConfigId: string, payload: AiModelConfigUpdateInput) =>
+      request<AiSettings>(`/api/v1/ai/providers/${encodeURIComponent(providerConfigId)}/models/${encodeURIComponent(modelConfigId)}`, {
+        method: "PATCH",
         body: JSON.stringify(payload),
       }),
 
@@ -1107,14 +1198,68 @@ export const createEdgeEverClient = (options: EdgeEverClientOptions = {}) => {
 
     streamAiGeneration: async (payload: AiGenerateInput, streamOptions: { signal?: AbortSignal; onEvent: (event: AiStreamEvent) => void }) => {
       throwIfAborted(streamOptions.signal);
-      const { context, response } = await send("/api/v1/ai/generate/prepare", {
-        method: "POST", body: JSON.stringify(payload), signal: streamOptions.signal,
+      const prepare = async () => {
+        const { context, response } = await send("/api/v1/ai/generate/prepare", {
+          // This client can send a request without an output limit when none is known (#652).
+          method: "POST", body: JSON.stringify({ ...payload, allowUnboundedOutput: true }), signal: streamOptions.signal,
+        });
+        if (response.status === 404 || response.status === 410) throw directAiUnavailable();
+        if (!response.ok) await throwRequestError(context, response);
+        const parsed = parsePreparedAiGeneration(await response.json());
+        if (!parsed) throw new ApiRequestError("The AI prepare response is invalid", 502, "ai_generation_failed");
+        return parsed;
+      };
+      let prepared = await prepare();
+      // Reporting and detecting are separate: a fresh cache is not read again, but a limit learned
+      // from a provider error is still reported so a cached value that is too high gets corrected.
+      const target = prepared.capabilityTarget;
+      const report = (limits: AiModelCapabilityLimits) => target
+        ? request(`/api/v1/ai/providers/${encodeURIComponent(target.providerConfigId)}/models/${encodeURIComponent(target.modelConfigId)}/capabilities`, {
+          method: "PUT",
+          body: JSON.stringify({
+            provider: prepared.provider,
+            modelId: prepared.modelId,
+            baseUrl: prepared.baseUrl,
+            configVersion: target.configVersion,
+            ...limits,
+          }),
+        }).then(() => true, () => false)
+        : Promise.resolve(false);
+      if (target && prepared.detectCapabilities) {
+        // The instance has no fresh limits for this model: read them from the provider once,
+        // save them for every client, and prepare again so this request already uses them.
+        const { detectAiModelCapabilities } = await import("./ai-model-capabilities-direct");
+        const limits = await detectAiModelCapabilities(prepared, providerFetch(), streamOptions.signal);
+        const hasLimits = Boolean(limits && (limits.maxOutputTokens || limits.maxInputTokens || limits.contextWindowTokens));
+        if (limits && await report(limits) && hasLimits) prepared = await prepare();
+      }
+      await streamDirectAiGeneration(prepared, payload.attachments, {
+        fetch: providerFetch(),
+        ...streamOptions,
+        onOutputLimit: async (maxOutputTokens) => {
+          if (!target) return;
+          await report({ maxOutputTokens, maxInputTokens: null, contextWindowTokens: null, source: "provider-error" });
+        },
       });
-      if (response.status === 404 || response.status === 410) throw directAiUnavailable();
-      if (!response.ok) await throwRequestError(context, response);
-      const prepared = parsePreparedAiGeneration(await response.json());
-      if (!prepared) throw new ApiRequestError("The AI prepare response is invalid", 502, "ai_generation_failed");
-      await streamDirectAiGeneration(prepared, payload.attachments, { fetch: providerFetch(), ...streamOptions });
+    },
+
+    /** Read a saved model's limits from its provider and store them on the instance (#652). */
+    detectAiModelCapabilities: async (providerConfigId: string, modelConfigId: string, modelId: string, signal?: AbortSignal) => {
+      const credential = await request<{ provider: AiProvider; baseUrl: string; apiKey: string; configVersion: string }>(
+        `/api/v1/ai/providers/${encodeURIComponent(providerConfigId)}/direct-credential`,
+        { method: "POST", body: JSON.stringify({ modelId }), signal },
+      );
+      const { detectAiModelCapabilities } = await import("./ai-model-capabilities-direct");
+      const limits = await detectAiModelCapabilities({ ...credential, modelId }, providerFetch(), signal);
+      if (!limits) return null;
+      return request<{ detectedCapabilities: AiModelCapabilities | null }>(
+        `/api/v1/ai/providers/${encodeURIComponent(providerConfigId)}/models/${encodeURIComponent(modelConfigId)}/capabilities`,
+        {
+          method: "PUT",
+          body: JSON.stringify({ provider: credential.provider, modelId, baseUrl: credential.baseUrl, configVersion: credential.configVersion, ...limits }),
+          signal,
+        },
+      );
     },
 
     listUsers: () => request<ListUsersResponse>("/api/v1/users"),
@@ -1143,7 +1288,10 @@ export const createEdgeEverClient = (options: EdgeEverClientOptions = {}) => {
 
     syncBootstrap: (params?: { afterId?: string | null; limit?: number }) => {
       const search = new URLSearchParams();
-      if (params?.afterId) search.set("afterId", params.afterId);
+      if (params?.afterId) {
+        search.set("afterId", params.afterId);
+        search.set("includeMetadata", "0");
+      }
       if (params?.limit) search.set("limit", String(params.limit));
       const suffix = search.toString() ? `?${search.toString()}` : "";
       return request<SyncBootstrapResponse>(`/api/v1/sync/bootstrap${suffix}`);
@@ -1159,6 +1307,7 @@ export const createEdgeEverClient = (options: EdgeEverClientOptions = {}) => {
       const search = new URLSearchParams({ limit: String(limit) });
       if (afterId) {
         search.set("afterId", afterId);
+        search.set("includeMetadata", "0");
       }
       return request<MobileSyncBootstrapPage>(`/api/v1/sync/bootstrap?${search.toString()}`);
     },
@@ -1216,6 +1365,7 @@ export const createEdgeEverClient = (options: EdgeEverClientOptions = {}) => {
 
     listMemos: (params: {
       notebookId?: string | null;
+      includeTotal?: boolean;
       includeDescendants?: boolean;
       q?: string;
       tag?: string;
@@ -1263,8 +1413,13 @@ export const createEdgeEverClient = (options: EdgeEverClientOptions = {}) => {
         search.set("limit", String(params.limit));
       }
 
+      if (params.includeTotal === false) search.set("includeTotal", "0");
       return request<ListMemosResponse>(`/api/v1/memos?${search.toString()}`);
     },
+
+    getImportCapabilities: () => request<{ protocolVersion: number; maxBatchSize: number; formats: string[]; importContext: string; accountId: string | null }>("/api/v1/imports/capabilities"),
+
+    importMemos: (payload: ImportMemosInput) => request<ImportMemosResponse>("/api/v1/imports/memos", { method: "POST", body: JSON.stringify(payload) }),
 
     createMemo: (payload: {
       notebookId: string;
@@ -1460,7 +1615,7 @@ export const createEdgeEverClient = (options: EdgeEverClientOptions = {}) => {
         body: JSON.stringify({}),
       }),
 
-    updateMemoShare: (memoId: string, payload: { passwordProtected?: boolean; slug?: string | null }) =>
+    updateMemoShare: (memoId: string, payload: { passwordProtected?: boolean; password?: string; slug?: string | null; showUpdatedAt?: boolean; showBranding?: boolean; expiresAt?: string | null }) =>
       request<{ share: MemoShare }>(`/api/v1/memos/${memoId}/share`, {
         method: "PATCH",
         body: JSON.stringify(payload),
@@ -1541,7 +1696,7 @@ export const createEdgeEverClient = (options: EdgeEverClientOptions = {}) => {
         method: "DELETE",
       }),
 
-    getMarkdownExportPage: (offset = 0, limit = 50, memoIds?: string[]) => {
+    getMarkdownExportPage: (offset = 0, limit = 50, memoIds?: string[], cursor?: string) => {
       const search = new URLSearchParams({
         offset: String(offset),
         limit: String(limit),
@@ -1549,11 +1704,17 @@ export const createEdgeEverClient = (options: EdgeEverClientOptions = {}) => {
       if (memoIds && memoIds.length > 0) {
         search.set("ids", memoIds.join(","));
       }
+      if (offset > 0) search.set("includeTotal", "0");
+      if (cursor !== undefined) search.set("cursor", cursor);
       return request<MarkdownExportPage>(`/api/v1/exports/markdown?${search.toString()}`);
     },
 
-    getJsonBackupPage: (offset = 0, limit = 25) =>
-      request<JsonBackupPage>(`/api/v1/backups/json?offset=${offset}&limit=${limit}`),
+    getJsonBackupPage: (offset = 0, limit = 25, cursor?: string) => {
+      const search = new URLSearchParams({ offset: String(offset), limit: String(limit) });
+      if (offset > 0) search.set("includeTotal", "0");
+      if (cursor !== undefined) search.set("cursor", cursor);
+      return request<JsonBackupPage>(`/api/v1/backups/json?${search}`);
+    },
 
     restoreJsonNotebooks: (notebooks: JsonBackupNotebook[]) =>
       request<{ ok: true }>("/api/v1/restores/json/notebooks", {
@@ -1695,6 +1856,8 @@ export const createEdgeEverClient = (options: EdgeEverClientOptions = {}) => {
         contentJson?: TiptapDoc;
         contentMarkdown?: string;
         tags?: string[];
+        createdAt?: string;
+        updatedAt?: string;
         allowDestructiveOverwrite?: boolean;
       }
     ) =>

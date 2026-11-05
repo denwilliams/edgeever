@@ -83,6 +83,22 @@ test("server key validation preserves trimming, length limits and non-control ch
   }
 });
 
+test("accepts a reverse-proxied address ending in /upload and keeps the prefix for heartbeat", async () => {
+  expect(normalizePicGoEndpoint("https://nas.example.com/piclist/upload").pathname).toBe("/piclist/upload");
+  const seen = [];
+  const fetchImpl = async (url) => {
+    const parsed = new URL(url);
+    seen.push(parsed.pathname);
+    return parsed.pathname.endsWith("/heartbeat")
+      ? Response.json({ success: true, result: "alive" })
+      : Response.json({ success: true, result: ["https://images.example.com/picture.png"] });
+  };
+  const lookupImpl = async () => [{ address: "203.0.113.10", family: 4 }];
+  await testPicGoConnection("https://nas.example.com/piclist/upload", { fetchImpl, lookupImpl });
+  await uploadPicGoImage(image("https://nas.example.com/piclist/upload"), { fetchImpl, lookupImpl });
+  expect(seen).toEqual(["/piclist/heartbeat", "/piclist/upload"]);
+});
+
 test("resolves a remote name before connecting and refuses link-local targets", async () => {
   const seen = [];
   await testPicGoConnection("https://piclist.example.com:8443/upload", {
@@ -114,6 +130,9 @@ test("rejects unsafe addresses and does not echo the server key", async () => {
     "http://0.0.0.0/upload",
     "http://[fe80::1]/upload",
     "http://127.0.0.1/other",
+    "http://127.0.0.1/upload/other",
+    "http://127.0.0.1/uploads",
+    "http://127.0.0.1/my-upload",
     "http://user:pass@localhost/upload",
     "http://localhost/upload?secret=foo",
     "http://localhost/upload?key=hidden",

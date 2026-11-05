@@ -67,6 +67,8 @@ contextBridge.exposeInMainWorld("edgeeverDesktop", Object.freeze({
   clearSessionToken: () => ipcRenderer.invoke("desktop:clear-session-token"),
   testPicGoConnection: (input) => ipcRenderer.invoke("desktop:picgo-test", input),
   uploadPicGoImage: (input) => ipcRenderer.invoke("desktop:picgo-upload", input),
+  testImgBedConnection: (input) => ipcRenderer.invoke("desktop:imgbed-test", input),
+  uploadImgBedImage: (input) => ipcRenderer.invoke("desktop:imgbed-upload", input),
   publicNetworkFetch: (requestId, input) => ipcRenderer.invoke("desktop:public-network-fetch", requestId, input),
   cancelPublicNetworkFetch: async (requestId) => { ipcRenderer.send("desktop:cancel-public-network-fetch", requestId); },
   openAiProviderStream: (requestId, input) => ipcRenderer.invoke("desktop:ai-direct-open", requestId, input),
@@ -81,6 +83,8 @@ contextBridge.exposeInMainWorld("edgeeverDesktop", Object.freeze({
   probeAcpAdapter: (input) => ipcRenderer.invoke("desktop:acp-probe", input),
   installAcpAdapter: (id) => ipcRenderer.invoke("desktop:acp-install", id),
   authenticateAcpAdapter: (input) => ipcRenderer.invoke("desktop:acp-authenticate", input),
+  cancelAcpAuthentication: (id) => ipcRenderer.invoke("desktop:acp-cancel-auth", id),
+  reopenAcpLoginPage: (id) => ipcRenderer.invoke("desktop:acp-reopen-login", id),
   prepareAcp: (input) => ipcRenderer.invoke("desktop:acp-prepare", input),
   promptAcp: (input) => ipcRenderer.invoke("desktop:acp-prompt", input),
   cancelAcp: (requestId) => ipcRenderer.invoke("desktop:acp-cancel", requestId),
@@ -103,6 +107,21 @@ contextBridge.exposeInMainWorld("edgeeverDesktop", Object.freeze({
     return () => ipcRenderer.removeListener("desktop:update-status-changed", listener);
   },
   sidecarRequest: (method, params = {}) => ipcRenderer.invoke("desktop:sidecar-request", method, params),
+  openAttachment: (input) => {
+    if (!navigator.userActivation?.isActive) return Promise.resolve({ ok: false, code: "forbidden" });
+    return ipcRenderer.invoke("desktop:open-attachment", input);
+  },
+  attachmentWritebacks: () => ipcRenderer.invoke("desktop:attachment-writebacks"),
+  retryAttachmentWriteback: (id) => ipcRenderer.invoke("desktop:retry-attachment-writeback", id),
+  revealAttachmentWriteback: (id) => {
+    if (!navigator.userActivation?.isActive) return Promise.resolve();
+    return ipcRenderer.invoke("desktop:reveal-attachment-writeback", id);
+  },
+  onAttachmentResourceSaved: (callback) => {
+    const listener = (_event, resource) => callback(resource);
+    ipcRenderer.on("desktop:attachment-resource-saved", listener);
+    return () => ipcRenderer.removeListener("desktop:attachment-resource-saved", listener);
+  },
   beginStagedResource: (input) => ipcRenderer.invoke("desktop:stage-resource-begin", input),
   appendStagedResource: (id, bytes) => ipcRenderer.invoke("desktop:stage-resource-append", id, bytes),
   completeStagedResource: (id) => ipcRenderer.invoke("desktop:stage-resource-complete", id),
@@ -120,6 +139,31 @@ contextBridge.exposeInMainWorld("edgeeverDesktop", Object.freeze({
     ipcRenderer.on("desktop:command", listener);
     return () => ipcRenderer.removeListener("desktop:command", listener);
   },
+  noteWindows: () => ipcRenderer.invoke("desktop:note-windows"),
+  openNoteWindow: (memoId) => ipcRenderer.invoke("desktop:open-note-window", memoId),
+  focusNoteWindow: (memoId) => ipcRenderer.invoke("desktop:focus-note-window", memoId),
+  onNoteWindowsChanged: (callback) => {
+    const listener = (_event, memoIds) => callback(Array.isArray(memoIds) ? memoIds : []);
+    ipcRenderer.on("desktop:note-windows-changed", listener);
+    return () => ipcRenderer.removeListener("desktop:note-windows-changed", listener);
+  },
+  onNoteWindowCloseRequest: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on("desktop:note-window-close-request", listener);
+    ipcRenderer.send("desktop:note-window-listening");
+    return () => ipcRenderer.removeListener("desktop:note-window-close-request", listener);
+  },
+  resolveNoteWindowClose: (allowed) => ipcRenderer.send("desktop:note-window-close-result", allowed === true),
+  notifyNoteWindowSaved: () => ipcRenderer.send("desktop:note-window-saved"),
+  notifyNoteWindowReady: () => ipcRenderer.send("desktop:note-window-ready"),
+  notifyNoteWindowLoadFailed: () => ipcRenderer.send("desktop:note-window-load-failed"),
+  sendNoteWindowSync: (memoId, update) => ipcRenderer.send("desktop:note-window-sync", memoId, update),
+  onNoteWindowSync: (callback) => {
+    const listener = (_event, update) => callback(update);
+    ipcRenderer.on("desktop:note-window-sync", listener);
+    return () => ipcRenderer.removeListener("desktop:note-window-sync", listener);
+  },
+  openMemoInMainWindow: (memoId) => ipcRenderer.invoke("desktop:open-memo-in-main-window", memoId),
   setRichTextHeadingShortcutActive: (active) => {
     ipcRenderer.sendSync("desktop:rich-text-heading-shortcut", active === true);
   },

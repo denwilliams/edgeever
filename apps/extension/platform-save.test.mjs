@@ -129,7 +129,7 @@ const harness = (options = {}) => {
         await options.captureGate?.(target.tabId);
         runInContext(pageCaptureScript, scriptContext);
       }
-      else if (!["assets/capture-image.js", "assets/clip-feedback.js"].includes(files?.[0])) throw new Error(`Unexpected generic fallback: ${files}`);
+      else if (!["assets/capture-image.js", "assets/clip-feedback.js", "assets/region-clip.js"].includes(files?.[0])) throw new Error(`Unexpected generic fallback: ${files}`);
 
       return [];
     } },
@@ -155,6 +155,9 @@ const harness = (options = {}) => {
     calls,
     toolbar: () => new Promise((resolve) => onMessage({ type: "captureCurrentPage" }, { id: chrome.runtime.id }, resolve)),
     mode: () => new Promise((resolve) => onMessage({ type: "getCurrentPageCaptureMode" }, { id: chrome.runtime.id }, resolve)),
+    message: (message, sender = { id: chrome.runtime.id, tab: { id: 7 }, frameId: 0, url: pageUrl }) => new Promise(resolve => {
+      if (!onMessage(message, sender, resolve)) resolve({ ignored: true });
+    }),
     menu: () => new Promise((resolve) => { menuDone = resolve; onClick({ menuItemId: `save-${platform}`, pageUrl, frameId: 0 }, { id: 7, url: pageUrl }); }),
     selectionMenu: () => new Promise((resolve) => {
       menuDone = resolve;
@@ -164,6 +167,42 @@ const harness = (options = {}) => {
     }),
   };
 };
+
+test("starting the region picker only injects its explicit script and writes nothing", async () => {
+  const h = harness();
+  expect(await h.message({ type: "startRegionClip" })).toMatchObject({ ok: true });
+  expect(h.calls.injections).toEqual([{ target: { tabId: 7, frameIds: [0] }, files: ["assets/region-clip.js"] }]);
+  expect(h.calls.requests).toHaveLength(0);
+  const denied = harness({ denyScripting: true });
+  expect(await denied.message({ type: "startRegionClip" })).toMatchObject({ ok: false, message: "pageAccessDenied" });
+  expect(denied.calls.requests).toHaveLength(0);
+});
+
+test("a selected region uses the memo and image-localization pipeline without whole-page capture", async () => {
+  const h = harness();
+  const page = { title: "Selected section", url: urls["hacker-news"], markdown: "## Chosen\n\nOnly this paragraph.\n\n![Selected](https://example.test/photo.png)", kind: "region" };
+  expect(await h.message({ type: "saveRegionClip", page })).toMatchObject({ ok: true });
+  expect(h.calls.creates).toHaveLength(1);
+  expect(h.calls.creates[0].notebookId).toBe("nb_inbox");
+  expect(h.calls.creates[0].contentMarkdown).toContain("Only this paragraph.");
+  expect(h.calls.uploads).toHaveLength(1);
+  expect(h.calls.saves[0].contentMarkdown).toContain("/api/v1/resources/res_1/blob");
+  expect(h.calls.injections.some(call => call.files?.includes("assets/capture.js"))).toBe(false);
+});
+
+for (const failure of ["wrong-frame", "no-tab", "wrong-extension", "changed-url", "empty", "not-region"]) test(`region ${failure} cannot create a note`, async () => {
+  const h = harness();
+  const page = { title: "Selected", url: urls["hacker-news"], markdown: "Chosen content", kind: "region" };
+  const sender = { id: "extension-under-test", tab: { id: 7 }, frameId: 0, url: page.url };
+  if (failure === "wrong-frame") sender.frameId = 1;
+  if (failure === "no-tab") delete sender.tab;
+  if (failure === "wrong-extension") sender.id = "another-extension";
+  if (failure === "changed-url") page.url += "&different=1";
+  if (failure === "empty") page.markdown = "   ";
+  if (failure === "not-region") page.kind = "page";
+  expect(await h.message({ type: "saveRegionClip", page }, sender)).toMatchObject({ ok: false });
+  expect(h.calls.creates).toHaveLength(0);
+});
 
 test("Android without desktop menu/window APIs can initialize and save from the popup", async () => {
   const h = harness({ withoutDesktopApis: true });
@@ -322,6 +361,51 @@ test("a new platform toolbar still saves a valid selection instead of its full a
   expect(h.calls.creates[0].tags).toEqual(["web-clip"]);
   expect(h.calls.creates[0].contentMarkdown).toContain("Only this passage");
   expect(h.calls.creates[0].contentMarkdown).not.toContain("环境不好");
+});
+
+for(const [fixture,imageCount] of [["wechat-pictures",5],["wechat-pictures-ten",10],["wechat-pictures-no-heading",6]]) {
+  for(const entry of ["toolbar","menu"]) test(`WeChat ${fixture} ${entry} saves every original picture through the existing attachment pipeline`,async()=>{
+    const doc=createDocument(readFileSync(new URL(`./fixtures/platforms/${fixture}.html`,import.meta.url),'utf8'));
+    const pageUrl=doc.querySelector('meta[property="og:url"]').getAttribute('content');
+    const declared=JSON.parse(doc.querySelector('#wechat-picture-state').textContent);
+    const h=harness({platform:'wechat',fixture,pageUrl,prepare:(_doc,window)=>{window.cgiDataNew=declared;}});
+    const result=await h[entry]();expect(entry==='toolbar' ? result.ok : result.kind).toBe(entry==='toolbar' ? true : 'success');
+    expect(h.calls.creates).toHaveLength(1);expect(h.calls.creates[0].title).toBe(doc.querySelector('.rich_media_title')?.textContent || doc.querySelector('meta[property="og:title"]').getAttribute('content'));
+    expect(h.calls.creates[0].tags).toEqual(['web-clip','wechat']);
+    expect(h.calls.uploads).toHaveLength(imageCount);expect(h.calls.saves).toHaveLength(1);
+    const markdown=h.calls.saves[0].contentMarkdown;
+    expect([...markdown.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)].map(m=>m[1])).toEqual(Array.from({length:imageCount},(_,i)=>`/api/v1/resources/res_${i+1}/blob`));
+    expect(markdown).not.toContain('收录于推荐合集');expect(markdown).not.toContain('account-avatar.png');
+  });
+}
+
+test("WeChat reads the full declared gallery rather than the site's twenty-picture preview",async()=>{
+  const h=harness({platform:'wechat',fixture:'wechat-pictures',pageUrl:'https://mp.weixin.qq.com/s/FXFDv4PbDrq3ueGLVWU0-A',prepare:(doc,window)=>{
+    const data=JSON.parse(doc.querySelector('#wechat-picture-state').textContent);
+    data.picture_page_info_list=Array.from({length:21},(_,i)=>({cdn_url:`https://example.test/gallery/${i}.png`}));
+    window.cgiDataNew=data;window.picture_page_info_list=data.picture_page_info_list.slice(0,20);
+  }});
+  expect((await h.toolbar()).ok).toBe(true);expect(h.calls.uploads).toHaveLength(21);
+});
+
+test("WeChat malformed picture state fails before creating a note",async()=>{
+  for(const data of [undefined,{picture_page_info_list:[]},{link:urls.wechat,picture_page_info_list:[{cdn_url:'https://example.test/first.png'},{}]}]) {
+    const h=harness({platform:'wechat',fixture:'wechat-pictures',pageUrl:'https://mp.weixin.qq.com/s/FXFDv4PbDrq3ueGLVWU0-A',prepare:(_doc,window)=>{window.cgiDataNew=data;}});
+    expect((await h.toolbar()).ok).toBe(false);expect(h.calls.creates).toHaveLength(0);expect(h.calls.uploads).toHaveLength(0);
+  }
+});
+
+test("WeChat conflicting declared aliases fail before saving, while matching aliases still archive the gallery",async()=>{
+  const pageUrl='https://mp.weixin.qq.com/s?__biz=MzA%3D%3D&mid=123&idx=1&sn=abc';
+  for(const conflict of [false,true]) {
+    const h=harness({platform:'wechat',fixture:'wechat-pictures',pageUrl,prepare:(doc,window)=>{
+      const data=JSON.parse(doc.querySelector('#wechat-picture-state').textContent);
+      if(conflict)data.link=urls.wechat;window.cgiDataNew=data;
+    }});
+    const result=await h.toolbar();expect(result.ok).toBe(!conflict);
+    expect(h.calls.creates).toHaveLength(conflict ? 0 : 1);expect(h.calls.uploads).toHaveLength(conflict ? 0 : 5);
+    if(conflict)expect(result.message).toBe('platformPageChanged');
+  }
 });
 
 test("Xiaoyuzhou saves the current client route using MAIN-world props while bootstrap JSON stays old", async () => {

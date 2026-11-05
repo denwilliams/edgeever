@@ -728,6 +728,7 @@ function AiSidebarSession({
     if (code === "ai_provider_payment_required") return t("companion.providerPaymentRequired");
     if (code === "ai_provider_rate_limited") return t("companion.providerRateLimited");
     if (code === "ai_provider_request_rejected") return t("companion.providerRequestRejected");
+    if (code === "companion_response_too_long") return t("companion.responseTooLong");
     if (code === "companion_memory_conflict") return t("companion.conflict");
     if (code === "companion_history_full") return t("companion.historyFull");
     if (code === "companion_action_conflict") return t("aiAssistant.sidebar.proposalConflict");
@@ -903,6 +904,7 @@ function AiSidebarSession({
         setError(noteAccessErrorKey ? t(noteAccessErrorKey)
           : event.message === "workbuddy_credentials_unavailable" ? t("aiAssistant.agentSource.workbuddyCredentialsUnavailable")
           : event.message === "identity_status_unavailable" ? t("aiAssistant.agentSource.identityStatusUnavailable")
+          : event.message === "node_missing" && localAdapterId === "codebuddy" ? t("aiAssistant.agentSource.codebuddyNodeMissingHint")
           : event.message === "needs_login" && localAdapterId === "claudeCode" ? t("aiAssistant.agentSource.claudeCodeLoginHint")
           : event.message === "needs_login" ? t(localAdapterId === "workbuddyCn" || localAdapterId === "workbuddyIntl"
             ? "aiAssistant.sidebar.workbuddyLoginRequired" : "aiAssistant.sidebar.localLoginRequired")

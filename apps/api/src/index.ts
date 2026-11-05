@@ -1,3 +1,4 @@
+import { isDatabaseDailyQuotaError } from "./database-errors";
 import {
   createExcerpt,
   docToText,
@@ -5,6 +6,7 @@ import {
   normalizeTags,
 } from "@edgeever/shared";
 import { Hono } from "hono";
+import { registerImportContextGuard, registerImportRoutes } from "./import-routes";
 import { cors } from "hono/cors";
 import { resolveContainerImageSource } from "./container-image-source";
 import apiProbe from "../../../docs/openapi.json";
@@ -163,7 +165,7 @@ app.use(
   "/api/*",
   cors({
     origin: API_CORS_ORIGINS,
-    allowHeaders: ["Content-Type", "Authorization"],
+    allowHeaders: ["Content-Type", "Authorization", "x-edgeever-import-context"],
     allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     credentials: true,
   })
@@ -314,15 +316,26 @@ app.use("/api/v1/*", async (c, next) => {
     return;
   }
 
-  const auth = await authenticateRequest(c, true);
+  const auth = await authenticateRequest(c, true, { allowMfaRestricted: true });
 
   if (!auth) {
     return unauthorized(c, "Authentication required.");
   }
 
+  if (auth.mfaRestricted) {
+    return apiError(
+      c,
+      "mfa_rebind_required",
+      "Bind a new authenticator to finish signing in with a recovery code.",
+      403,
+    );
+  }
+
   c.set("auth", auth);
   await next();
 });
+
+registerImportContextGuard(app);
 
 registerObjectStorageRoutes(app, {
   isDemoMode: (...args) => isDemoMode(...args),
@@ -347,6 +360,7 @@ registerSyncRoutes(app, {
   clampNumber: (...args) => clampNumber(...args),
   mapMemoDetail: (...args) => mapMemoDetail(...args),
 });
+registerImportRoutes(app);
 registerTagRoutes(app);
 registerPosterRenderRoutes(app);
 registerPluginDistributionRoutes(app);
@@ -515,6 +529,12 @@ app.onError((error, c) => {
 
   const requestError = httpExceptionError(c, error);
   if (requestError) return requestError;
+
+  if (isDatabaseDailyQuotaError(error)) {
+    console.error("EdgeEver database daily quota exhausted", error);
+    return apiError(c, "database_daily_quota_exceeded",
+      "The instance's Cloudflare D1 daily database quota is exhausted. Daily quotas reset at 00:00 UTC. The instance owner can also upgrade the Workers plan.", 503);
+  }
 
   if (isDatabaseNotReadyError(error)) {
     console.error("EdgeEver database readiness check failed", error);

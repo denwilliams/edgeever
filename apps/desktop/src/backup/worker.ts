@@ -1,4 +1,4 @@
-import { parentPort, workerData } from "node:worker_threads";
+import { backupWorkerRuntime } from "./worker-runtime";
 import { createHash } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
 import { open, rm } from "node:fs/promises";
@@ -15,7 +15,8 @@ type Context = { baseUrl: string; accountId: string | null; token: string; local
 type Input = { operation: "export" | "import" | "verify"; context: Context; path: string; password?: string; stagingDirectory?: string; previousState?: SourceState; version?: { edgeeverVersion: string; buildId: string } };
 type State = { protocolVersion: number; userId: string | null; workspaceId: string; identity: string; backupRevision: string; counts: Required<JsonBackupManifest["counts"]> };
 type SourceState = Pick<State, "identity" | "workspaceId" | "backupRevision">;
-const input = workerData as Input;
+const { data, port: parentPort, request: networkFetch } = await backupWorkerRuntime();
+const input = data as Input;
 const abort = new AbortController();
 const signal = abort.signal;
 let confirm: (() => void) | undefined;
@@ -25,8 +26,38 @@ parentPort?.on("message", (message) => {
 });
 const send = (type: string, result: unknown) => parentPort?.postMessage({ type, result });
 const fail = (code: string, message: string, status?: number): never => { throw Object.assign(new Error(message), { code, ...(status === undefined ? {} : { status }) }); };
+const networkCauseCodes = (error: unknown): string[] => {
+  const codes = new Set<string>();
+  const pending = [error];
+  const seen = new Set<unknown>();
+  while (pending.length && seen.size < 16) {
+    const value = pending.shift();
+    if (!value || typeof value !== "object" || seen.has(value)) continue;
+    seen.add(value);
+    const detail = value as { code?: unknown; cause?: unknown; errors?: unknown };
+    // Do not log arbitrary messages, addresses, stacks or request credentials.
+    if (typeof detail.code === "string" && /^[A-Z][A-Z0-9_]{0,63}$/.test(detail.code)) codes.add(detail.code);
+    if (detail.cause) pending.push(detail.cause);
+    if (Array.isArray(detail.errors)) pending.push(...detail.errors.slice(0, 8));
+  }
+  return [...codes].slice(0, 8);
+};
 const fetchWithDiagnostics: typeof fetch = async (url, init) => {
-  const response = await fetch(url, init);
+  const startedAt = Date.now();
+  let response: Response;
+  try {
+    response = await networkFetch(url, init);
+  } catch (error) {
+    if (!signal.aborted) send("request-error", {
+      method: init?.method ?? "GET",
+      path: new URL(typeof url === "string" ? url : url instanceof URL ? url.href : url.url).pathname,
+      code: "backup_network_failed",
+      message: "Backup network request failed.",
+      causeCodes: networkCauseCodes(error),
+      elapsedMs: Date.now() - startedAt,
+    });
+    throw error;
+  }
   if (!response.ok) {
     const body = await response.clone().json().catch(() => null) as { error?: { code?: unknown; message?: unknown } } | null;
     send("request-error", {
@@ -62,6 +93,9 @@ const readState = async () => {
   }
   return state;
 };
+// A failed pipeline destroys the write stream, which closes the shared fd despite
+// autoClose: false. Ignore that close so the original failure reaches the caller.
+const closeOutput = (handle: import("node:fs/promises").FileHandle) => handle.close().catch((error) => { if (error?.code !== "EBADF") throw error; });
 const digestFactory = () => {
   const hash = createHash("sha256");
   return { update: (chunk: Uint8Array) => { hash.update(chunk); }, digest: () => hash.digest("hex") };
@@ -136,7 +170,7 @@ const runExport = async () => {
     await output.sync();
     const size = (await output.stat()).size;
     return { manifest, size, sourceState };
-  } finally { await output.close(); }
+  } finally { await closeOutput(output); }
 };
 
 const diskArchive = async (path: string) => {
@@ -175,7 +209,7 @@ const runImport = async () => {
     } else {
       const output = await open(staged, "wx", 0o600);
       try { await pipeline(createReadStream(input.path), createWriteStream(staged, { fd: output.fd, autoClose: false }), { signal }); }
-      finally { await output.close(); }
+      finally { await closeOutput(output); }
     }
     archive = await diskArchive(staged);
     const backup = await parseEdgeEverZip(archive.blob, (percentage) => send("progress", { stage: "checking", completed: percentage, total: 100 }), digestFactory);

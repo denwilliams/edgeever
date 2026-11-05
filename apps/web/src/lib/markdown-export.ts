@@ -11,13 +11,14 @@ export type MarkdownExportProgress = {
 export type MarkdownExportPage = {
   memos: MemoDetail[];
   resources: Resource[];
-  totalCount: number;
+  totalCount?: number;
   nextOffset: number | null;
+  nextCursor?: string | null;
 };
 
 export type MarkdownExportSource = {
   listNotebooks: () => Promise<{ notebooks: Notebook[] }>;
-  getPage: (offset: number, limit: number) => Promise<MarkdownExportPage>;
+  getPage: (offset: number, limit: number, cursor?: string) => Promise<MarkdownExportPage>;
   getResourceBlob: (resourceUrl: string) => Promise<Blob>;
 };
 
@@ -71,11 +72,14 @@ export const createMarkdownExport = async (
     void (async () => {
       try {
         let offset = 0;
+        let cursor: string | undefined;
         let completed = 0;
+        let total = 0;
 
         while (true) {
-          const page = await source.getPage(offset, EXPORT_PAGE_SIZE);
-          onProgress?.({ completed, total: page.totalCount });
+          const page = await source.getPage(offset, EXPORT_PAGE_SIZE, cursor);
+          total = page.totalCount ?? Math.max(total, completed + page.memos.length);
+          onProgress?.({ completed, total });
           const resourcesByMemo = new Map<string, Resource[]>();
 
           for (const resource of page.resources) {
@@ -114,13 +118,14 @@ export const createMarkdownExport = async (
             zip.add(markdownFile);
             markdownFile.push(strToU8(buildNoteMarkdown(markdown, memo, notebookPath)), true);
             completed += 1;
-            onProgress?.({ completed, total: page.totalCount });
+            onProgress?.({ completed, total });
           }
 
           if (page.nextOffset === null) {
             break;
           }
           offset = page.nextOffset;
+          cursor = page.nextCursor ?? undefined;
         }
 
         zip.end();

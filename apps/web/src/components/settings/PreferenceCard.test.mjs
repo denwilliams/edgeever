@@ -28,9 +28,24 @@ describe("editor body font preference", () => {
     expect(editorFonts).toContain("html[data-ui-font]");
     expect(editorFonts).toContain("html[data-ui-font]:not([data-editor-body-font]) .edgeever-editor[data-editor-theme=\"default\"] .ProseMirror");
     expect(editorFonts).toContain("html[data-ui-font] .edgeever-public-share");
-    expect(editorFonts).not.toContain(".edgeever-code-source");
     for (const fileName of ["kai.woff2", "kai-screen.woff2", "fangsong.woff2", "song.woff2", "zhi-song.woff2", "hei.woff2", "source-serif-4-regular.woff2", "OFL-lxgw-wenkai.txt", "OFL-zhuque-fangsong.txt", "OFL-source-han-serif.txt", "OFL-source-serif-4.txt", "IPA-lxgw-neo-zhi-song.txt"]) {
       expect(existsSync(new URL(`../../assets/fonts/editor-body/${fileName}`, import.meta.url))).toBe(true);
+    }
+  });
+
+  test("scopes code source fonts to the explicit code font preference", () => {
+    const editorFonts = readFileSync(new URL("../../styles/editor-body-fonts.css", import.meta.url), "utf8");
+    const rules = [...editorFonts.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^{}]*)\}/g)];
+    const codeSourceRules = rules.filter(([, selectors]) => selectors.includes(".edgeever-code-source"));
+
+    expect(codeSourceRules.length).toBeGreaterThan(0);
+    for (const [, selectors, declarations] of codeSourceRules) {
+      // Split between selectors, retaining commas inside :is(...).
+      for (const selector of selectors.trim().split(/,\s*(?=html)/)) {
+        expect(selector).toStartWith("html[data-editor-code-font] ");
+      }
+      expect(declarations).toMatch(/font-family:\s*var\(--editor-code-font-family\)/);
+      expect(declarations).not.toContain("--editor-body-font-family");
     }
   });
 });
@@ -59,6 +74,11 @@ describe("reading typography settings", () => {
     expect(preferenceCard).toContain('t("settings.editorBodyPaletteTitle")');
     expect(preferenceCard).toContain("NoteProsePaletteSwatch");
     expect(preferenceCard).toContain("NOTE_PROSE_PALETTES[paletteId].accent");
+    expect(preferenceCard).toContain('t("settings.editorBodyHeadingStyleTitle")');
+    expect(preferenceCard).toContain('t("settings.editorBodyQuoteStyleTitle")');
+    expect(preferenceCard).toContain('t("settings.editorBodyEmphasisStyleTitle")');
+    expect(preferenceCard).toContain('t("settings.editorBodyMagazineCoverTitle")');
+    expect(preferenceCard).toContain('t("settings.editorBodyMagazineCoverDescription")');
     expect(preferenceCard).toContain('t("settings.editorBodyCssTitle")');
     expect(preferenceCard.slice(preferenceCard.indexOf("editorBodyCssTitle") - 500, preferenceCard.indexOf("editorBodyCssTitle"))).toContain("lg:flex");
     expect(preferenceCard).toContain('t("settings.editorBodyCssDescription")');
@@ -88,7 +108,10 @@ describe("settings information architecture", () => {
     const shortcuts = readFileSync(new URL("./ShortcutSettingsItem.tsx", import.meta.url), "utf8");
 
     expect(preferenceCard).toContain('t("settings.groups.interface")');
+    expect(preferenceCard).toContain('t("settings.groups.readingAppearance")');
     expect(preferenceCard).toContain('t("settings.groups.reading")');
+    expect(preferenceCard).toContain('t("settings.groups.readingElements")');
+    expect(preferenceCard.indexOf("editorBodyCssTitle")).toBeLessThan(preferenceCard.indexOf("editorBodyFontTitle"));
     expect(preferenceCard).toContain('t("settings.groups.editing")');
     expect(preferenceCard).not.toContain("ShortcutSettingsItem");
     expect(settingsPane).toContain('t("settings.tabs.shortcuts")');

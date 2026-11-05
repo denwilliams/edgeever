@@ -38,6 +38,14 @@ interface DesktopLoginItemState {
   error?: "invalid" | "saveFailed";
 }
 
+/** A main-window sync result for the note shown in a note window. */
+interface DesktopNoteWindowSyncUpdate {
+  failed: number;
+  conflicted: number;
+  /** The note as acknowledged by this sync, when it was part of it. */
+  memo: import("@edgeever/shared").MemoDetail | null;
+}
+
 interface EdgeEverDesktopBridge {
   backup<A extends keyof import("@edgeever/shared").DesktopBackupActions>(action: A, input?: import("@edgeever/shared").DesktopBackupActions[A]["input"]): Promise<import("@edgeever/shared").DesktopBackupActions[A]["output"]>;
   onBackupStatus(callback: (status: import("@edgeever/shared").DesktopBackupStatus | null) => void): () => void;
@@ -58,6 +66,13 @@ interface EdgeEverDesktopBridge {
   uploadPicGoImage(input: {
     endpoint: string; serverKey?: string; bytes: Uint8Array; filename: string; mimeType: string;
     copy: import("@/lib/picgo").PicGoFailureCopy;
+  }): Promise<{ url: string } | { fallback: true }>;
+  testImgBedConnection?(input: { endpoint: string; token: string; uploadFolder: string; nameType: import("@/lib/imgbed").ImgBedNameType;
+    uploadChannel: import("@/lib/imgbed").ImgBedUploadChannel; serverCompress: boolean }): Promise<boolean>;
+  uploadImgBedImage?(input: {
+    endpoint: string; token: string; uploadFolder: string; nameType: import("@/lib/imgbed").ImgBedNameType;
+    uploadChannel: import("@/lib/imgbed").ImgBedUploadChannel; serverCompress: boolean;
+    bytes: Uint8Array; filename: string; mimeType: string; copy: import("@/lib/picgo").PicGoFailureCopy;
   }): Promise<{ url: string } | { fallback: true }>;
   publicNetworkFetch(requestId: string, input: import("@edgeever/shared").PluginPublicFetchRequest): Promise<import("@edgeever/shared").PluginPublicFetchResponse>;
   cancelPublicNetworkFetch(requestId: string): Promise<void>;
@@ -107,6 +122,11 @@ interface EdgeEverDesktopBridge {
   installUpdate(): Promise<unknown>;
   onUpdateStatus(callback: (status: DesktopUpdateStatus) => void): () => void;
   sidecarRequest<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T>;
+  openAttachment(input: { url: string; filename: string }): Promise<{ ok: boolean; code?: "forbidden" | "blocked" | "unavailable" | "open-failed" }>;
+  attachmentWritebacks?(): Promise<DesktopAttachmentWriteback[]>;
+  retryAttachmentWriteback?(id: string): Promise<void>;
+  revealAttachmentWriteback?(id: string): Promise<void>;
+  onAttachmentResourceSaved?(callback: (resource: import("@edgeever/shared").Resource) => void): () => void;
   beginStagedResource(input: { memoId: string; name: string; type: string; size: number }): Promise<{ id: string; partSize: number }>;
   appendStagedResource(id: string, bytes: ArrayBuffer): Promise<{ receivedBytes: number }>;
   completeStagedResource(id: string): Promise<{ id: string }>;
@@ -120,6 +140,18 @@ interface EdgeEverDesktopBridge {
   readResource(id: string): Promise<{ type: string; bytes: Uint8Array }>;
   removeStagedResource(id: string): Promise<void>;
   onCommand(callback: (command: string) => void): () => void;
+  noteWindows?(): Promise<string[]>;
+  openNoteWindow?(memoId: string): Promise<{ opened: boolean }>;
+  focusNoteWindow?(memoId: string): Promise<boolean>;
+  onNoteWindowsChanged?(callback: (memoIds: string[]) => void): () => void;
+  onNoteWindowCloseRequest?(callback: () => void): () => void;
+  resolveNoteWindowClose?(allowed: boolean): void;
+  notifyNoteWindowSaved?(): void;
+  notifyNoteWindowReady?(): void;
+  notifyNoteWindowLoadFailed?(): void;
+  sendNoteWindowSync?(memoId: string, update: DesktopNoteWindowSyncUpdate): void;
+  onNoteWindowSync?(callback: (update: DesktopNoteWindowSyncUpdate) => void): () => void;
+  openMemoInMainWindow?(memoId: string): Promise<boolean>;
   setRichTextHeadingShortcutActive?(active: boolean): void;
   onHeadingShortcut?(callback: (level: number) => void): () => void;
   onHibernatePrepare?(callback: () => void | Promise<void>): () => void;
@@ -134,7 +166,7 @@ interface EdgeEverDesktopBridge {
   finishWeChatImport?(importId: string, success: boolean): Promise<void>;
   retryWeChatImport?(importId: string): Promise<boolean>;
   listAcpAdapters?(): Promise<Array<{
-    id: "codex" | "claudeCode" | "antigravity" | "openClaw" | "hermesAgent" | "grokBuild" | "deepseekHarness" | "piAgent" | "workbuddyCn" | "workbuddyIntl";
+    id: "codex" | "claudeCode" | "antigravity" | "openClaw" | "hermesAgent" | "grokBuild" | "deepseekHarness" | "piAgent" | "workbuddyCn" | "workbuddyIntl" | "codebuddy";
     label: string;
     state: "not_installed" | "not_probed" | "installing" | "needs_login" | "available" | "failed";
     detail?: string;
@@ -145,8 +177,8 @@ interface EdgeEverDesktopBridge {
     authMethods?: Array<{ id: string; name: string }>;
   }>>;
   chooseAcpAdapterPath?(): Promise<string | null>;
-  probeAcpAdapter?(input: { id: "codex" | "claudeCode" | "antigravity" | "openClaw" | "hermesAgent" | "grokBuild" | "deepseekHarness" | "piAgent" | "workbuddyCn" | "workbuddyIntl"; path?: string }): Promise<{
-    id: "codex" | "claudeCode" | "antigravity" | "openClaw" | "hermesAgent" | "grokBuild" | "deepseekHarness" | "piAgent" | "workbuddyCn" | "workbuddyIntl";
+  probeAcpAdapter?(input: { id: "codex" | "claudeCode" | "antigravity" | "openClaw" | "hermesAgent" | "grokBuild" | "deepseekHarness" | "piAgent" | "workbuddyCn" | "workbuddyIntl" | "codebuddy"; path?: string }): Promise<{
+    id: "codex" | "claudeCode" | "antigravity" | "openClaw" | "hermesAgent" | "grokBuild" | "deepseekHarness" | "piAgent" | "workbuddyCn" | "workbuddyIntl" | "codebuddy";
     label: string;
     state: "not_installed" | "needs_login" | "available" | "failed";
     detail?: string;
@@ -163,21 +195,23 @@ interface EdgeEverDesktopBridge {
     promptCapabilities?: { image?: boolean; embeddedContext?: boolean };
     authMethods?: Array<{ id: string; name: string }>;
   } }>;
-  authenticateAcpAdapter?(input: { id: "codex" | "claudeCode" | "antigravity" | "openClaw" | "hermesAgent" | "grokBuild" | "deepseekHarness" | "piAgent" | "workbuddyCn" | "workbuddyIntl"; path?: string; methodId: string }): Promise<{
-    id: "codex" | "claudeCode" | "antigravity" | "openClaw" | "hermesAgent" | "grokBuild" | "deepseekHarness" | "piAgent" | "workbuddyCn" | "workbuddyIntl";
+  authenticateAcpAdapter?(input: { id: "codex" | "claudeCode" | "antigravity" | "openClaw" | "hermesAgent" | "grokBuild" | "deepseekHarness" | "piAgent" | "workbuddyCn" | "workbuddyIntl" | "codebuddy"; path?: string; methodId: string }): Promise<{
+    id: "codex" | "claudeCode" | "antigravity" | "openClaw" | "hermesAgent" | "grokBuild" | "deepseekHarness" | "piAgent" | "workbuddyCn" | "workbuddyIntl" | "codebuddy";
     label: string;
     state: "not_installed" | "needs_login" | "available" | "failed";
     detail?: string;
     authMethods?: Array<{ id: string; name: string }>;
   }>;
+  cancelAcpAuthentication?(id: "codebuddy"): Promise<{ cancelled: boolean }>;
+  reopenAcpLoginPage?(id: "codebuddy"): Promise<{ opened: boolean }>;
   prepareAcp?(input: {
-    adapterId: "codex" | "claudeCode" | "antigravity" | "openClaw" | "hermesAgent" | "grokBuild" | "deepseekHarness" | "piAgent" | "workbuddyCn" | "workbuddyIntl";
+    adapterId: "codex" | "claudeCode" | "antigravity" | "openClaw" | "hermesAgent" | "grokBuild" | "deepseekHarness" | "piAgent" | "workbuddyCn" | "workbuddyIntl" | "codebuddy";
     path?: string;
     sessionKey?: string;
     noteAccess?: boolean;
   }): Promise<{ ready: boolean }>;
   promptAcp?(input: {
-    adapterId: "codex" | "claudeCode" | "antigravity" | "openClaw" | "hermesAgent" | "grokBuild" | "deepseekHarness" | "piAgent" | "workbuddyCn" | "workbuddyIntl";
+    adapterId: "codex" | "claudeCode" | "antigravity" | "openClaw" | "hermesAgent" | "grokBuild" | "deepseekHarness" | "piAgent" | "workbuddyCn" | "workbuddyIntl" | "codebuddy";
     path?: string;
     prompt: string;
     contextText?: string;
@@ -280,4 +314,15 @@ interface EdgeEverPrintBridge {
 interface Window {
   edgeeverDesktop?: EdgeEverDesktopBridge;
   edgeeverPrint?: EdgeEverPrintBridge;
+}
+
+interface DesktopAttachmentWriteback {
+  id: string;
+  resourceId: string | null;
+  byteSize: number | null;
+  metadataAt: number;
+  filename: string;
+  status: "watching" | "pending" | "saving" | "saved" | "conflict" | "error";
+  errorCode: string | null;
+  savedAt: number | null;
 }
