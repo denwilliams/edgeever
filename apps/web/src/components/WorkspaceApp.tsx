@@ -1,6 +1,7 @@
 import { DesktopAttachmentWritebacks } from "./attachments/DesktopAttachmentWritebacks";
 import { useNoteImport } from "@/lib/note-import/use-note-import";
 import { NotebookAppearanceDialog } from "./dialogs/NotebookAppearanceDialog";
+import { ShareMemoDialog } from "./dialogs/ShareMemoDialog";
 import type { NotebookUpdateInput } from "@edgeever/shared";
 import { startPosterClientRenderer } from "@/lib/poster-client-render";
 import {
@@ -115,6 +116,7 @@ import { isNotebookNotEmptyError } from "@/lib/notebook-delete";
 import { getPersistentDataScopeOrigin } from "@/lib/app-page-path";
 import { createRepository } from "@/lib/repository";
 import { notifyRepositoryMutation } from "@/lib/repository-events";
+import { NOTEBOOK_LIST_REFRESHED_EVENT, type NotebookListRefresh } from "@/lib/sync-events";
 import {
   refreshWorkspaceData,
   shouldNavigateHomeWhenOpeningMemo,
@@ -246,7 +248,7 @@ export const WorkspaceApp = ({
     setSelectionMoveTargetNotebookId,
   } = useWorkspaceSelection(desktopWorkspaceRestore);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
-  const autoSelectedDemoNotebookRef = useRef(false);
+  const demoNotebookAutoSelectionHandledRef = useRef(false);
   const [createdMemoEditId, setCreatedMemoEditId] = useState<string | null>(null);
   const pendingCreatedMemoIdRef = useRef<string | null>(null);
   const pendingQuickSwitcherMemoIdRef = useRef<string | null>(desktopWorkspaceRestore?.selectedMemoId ?? null); // also link/companion/plugin opens not yet in the list
@@ -262,6 +264,7 @@ export const WorkspaceApp = ({
   const createMemoInFlightRef = useRef(false);
   const memoDocumentActionIdRef = useRef(0);
   const [memoDocumentActionRequest, setMemoDocumentActionRequest] = useState<MemoDocumentActionRequest | null>(null);
+  const [listShareMemoId, setListShareMemoId] = useState<string | null>(null);
   const [memoDeleteConfirmation, setMemoDeleteConfirmation] = useState<MemoDeleteConfirmation | null>(null);
   const [emptyTrashConfirmationOpen, setEmptyTrashConfirmationOpen] = useState(false);
   const [appearanceNotebook, setAppearanceNotebook] = useState<Notebook | null>(null);
@@ -713,6 +716,15 @@ export const WorkspaceApp = ({
     }
   }, [refreshWorkspaceFromServer]);
 
+  useEffect(() => {
+    const applyNotebookRefresh = (event: Event) => {
+      const { scope, notebooks } = (event as CustomEvent<NotebookListRefresh>).detail;
+      if (scope === localDataScope) queryClient.setQueryData(["notebooks"], { notebooks });
+    };
+    window.addEventListener(NOTEBOOK_LIST_REFRESHED_EVENT, applyNotebookRefresh);
+    return () => window.removeEventListener(NOTEBOOK_LIST_REFRESHED_EVENT, applyNotebookRefresh);
+  }, [localDataScope, queryClient]);
+
   const notebooksQuery = useQuery({
     queryKey: ["notebooks"],
     queryFn: () => repository.listNotebooks(),
@@ -740,8 +752,8 @@ export const WorkspaceApp = ({
       return;
     }
 
-    if (!autoSelectedDemoNotebookRef.current && selectedNotebookId === null && selectedTag === null) {
-      autoSelectedDemoNotebookRef.current = true;
+    if (!demoNotebookAutoSelectionHandledRef.current && selectedNotebookId === null && selectedTag === null) {
+      demoNotebookAutoSelectionHandledRef.current = true;
       setSelectedNotebookId(preferredNotebookId);
     }
   }, [i18n.resolvedLanguage, notebooks, selectedNotebookId, selectedTag]);
@@ -2531,6 +2543,8 @@ export const WorkspaceApp = ({
   };
 
   const handleSelectAllMemos = () => {
+    // An explicit All notes selection takes precedence over the startup default.
+    demoNotebookAutoSelectionHandledRef.current = true;
     clearPendingMemoSelection();
     navigateWorkspaceHome();
     setMemoView("notebook");
@@ -3622,6 +3636,11 @@ export const WorkspaceApp = ({
               onRestoreMemo={handleRestoreMemoFromList}
               onMoveMemo={handleMoveMemoFromList}
               onRequestDocumentAction={(memoId: string, action: MemoDocumentAction, printWindow?: Window | null) => {
+                // Link sharing only needs the note ID, regardless of its editor type.
+                if (action === "share") {
+                  setListShareMemoId(memoId);
+                  return;
+                }
                 clearPendingMemoSelection();
                 if (shouldNavigateHomeWhenOpeningMemo(memoView)) {
                   navigateWorkspaceHome();
@@ -3933,6 +3952,7 @@ export const WorkspaceApp = ({
                       onOpenExecutionCenter={handleOpenExecutionCenter}
                       memo={selectedMemo}
                       repository={repository}
+                      localDataScope={localDataScope}
                       pluginHost={pluginHost}
                       pluginNavigationRequest={pluginNavigationRequest}
                     onOpenAiPrompts={handleOpenAiPrompts}
@@ -4156,6 +4176,13 @@ export const WorkspaceApp = ({
           tone="primary"
           onCancel={() => setDemoResetConfirmationOpen(false)}
           onConfirm={() => resetDemoMutation.mutate()}
+        />
+      )}
+      {listShareMemoId && (
+        <ShareMemoDialog
+          memoId={listShareMemoId}
+          open
+          onOpenChange={(open) => { if (!open) setListShareMemoId(null); }}
         />
       )}
       <PluginPanelDialog

@@ -18,6 +18,7 @@ import {
   addTableRecord,
   createTableId,
   getTableSummary,
+  hasDiagramDocumentMarker,
   TABLE_FIELD_LIMIT,
   TABLE_RECORD_LIMIT,
   TABLE_SCHEMA_VERSION,
@@ -34,7 +35,6 @@ import {
   updateTableCell,
   type MemoDetail,
   type MemoSummary,
-  type MemoUpdateInput,
   type TableDocument,
 } from "@edgeever/shared";
 import { audit, auditStatement } from "./audit";
@@ -94,6 +94,11 @@ import {
     normalizeFilename,
   } from "./resource-service";
 import { assertScope, getActorLabel, getAuditActor } from "./request-auth";
+import {
+  createPendingResourceUpload,
+  parseResourceIds,
+  preparePendingResourceBinding,
+} from "./pending-resource-service";
 import { restoreMissingDefaultAiPrompts } from "./ai-prompt-seed";
 import {
   getAiPromptTemplateRow,
@@ -110,19 +115,9 @@ import {
   import type { DatabaseAdapter } from "./storage-contract";
   import { getWorkspaceStats } from "./workspace-stats-service";
 
-type MemoUpdateResult =
-  | { memo: MemoDetail; error?: never; message?: never; status?: never; details?: never }
-  | { error: string; message: string; status?: number; details?: Record<string, unknown> };
-
 export type McpToolDependencies = {
   clampNumber: (value: number, min: number, max: number) => number;
-  createMemoRecord: (
-    database: DatabaseAdapter,
-    workspaceId: string,
-    input: { notebookId: string; title?: string; contentJson?: unknown; contentMarkdown?: string; tags?: string[]; createdAt?: string; updatedAt?: string },
-    actor: AuditActor,
-    actorLabel: string,
-  ) => Promise<MemoDetail>;
+  createMemoRecord: typeof import("./memo-service").createMemoRecord;
   deleteMemosRecord: (
     environment: Bindings,
     workspaceId: string,
@@ -160,18 +155,7 @@ export type McpToolDependencies = {
       actorLabel: string;
     },
   ) => Promise<unknown>;
-  listMemosForMcp: (
-    database: DatabaseAdapter,
-    options: {
-      workspaceId: string;
-      notebookId?: string | null;
-      limit: number;
-      offset: number;
-      includeContent: boolean;
-      includeDeleted: boolean;
-      poster?: boolean | null;
-    },
-  ) => Promise<unknown>;
+  listMemosForMcp: typeof import("./memo-service").listMemosForMcp;
   mergeMemosRecord: (
     database: DatabaseAdapter,
     workspaceId: string,
@@ -193,32 +177,8 @@ export type McpToolDependencies = {
     memoIds: string[],
     actor: AuditActor,
   ) => Promise<number>;
-  searchMemoSummaries: (
-    database: DatabaseAdapter,
-    options: {
-      workspaceId: string;
-      query?: string | null;
-      notebookId?: string | null;
-      tags?: string[];
-      createdAfter?: string | null;
-      createdBefore?: string | null;
-      updatedAfter?: string | null;
-      updatedBefore?: string | null;
-      isPinned?: boolean | null;
-      hasResources?: boolean | null;
-      poster?: boolean | null;
-      limit: number;
-    },
-  ) => Promise<MemoSummary[]>;
-  updateMemoRecord: (
-    database: DatabaseAdapter,
-    workspaceId: string,
-    memoId: string,
-    input: MemoUpdateInput,
-    actor: AuditActor,
-    actorLabel: string,
-    requireEditSession?: boolean,
-  ) => Promise<MemoUpdateResult>;
+  searchMemoSummaries: typeof import("./memo-service").searchMemoSummaries;
+  updateMemoRecord: typeof import("./memo-service").updateMemoRecord;
 };
 
 type McpInputSchema<T> = {
@@ -242,10 +202,46 @@ const assertMcpMutationAllowed = (environment: Bindings) => {
   }
 };
 
+const includeAllMemoFormats = (format: unknown) => {
+  if (format !== undefined && format !== "all") {
+    throw new AppError("invalid_params", 'format must be "all" when provided.', 400);
+  }
+  return format === "all";
+};
+
+const projectMcpMemo = (memo: MemoSummary | MemoDetail) => {
+  if (!("contentMarkdown" in memo) || memo.poster
+    || hasDiagramDocumentMarker(memo.contentMarkdown)
+    || hasTableDocumentMarker(memo.contentMarkdown)
+    || hasInfographicDocumentMarker(memo.contentMarkdown)) {
+    return memo;
+  }
+  const { contentJson, contentText, ...markdownMemo } = memo;
+  return markdownMemo;
+};
+
 const memoWithoutInfographicPayload = (memo: MemoDetail) => {
   const contentMarkdown = stripInfographicDocumentMarker(memo.contentMarkdown);
   const contentJson = markdownToDoc(contentMarkdown);
   return { ...memo, contentMarkdown, contentJson, contentText: docToText(contentJson) };
+};
+
+/**
+ * The memo batch rolls back when a pending resource was bound or cleaned up by
+ * another call after it was checked. Report that instead of a storage error.
+ */
+const withBindingConflict = async <T>(binding: boolean, run: () => Promise<T>): Promise<T> => {
+  try {
+    return await run();
+  } catch (error) {
+    if (!binding || error instanceof AppError) throw error;
+    console.error("EdgeEver pending resource binding failed", error);
+    throw new AppError(
+      "pending_resource_conflict",
+      "No changes were made: a resource could not be bound because another call bound it or it expired. Check the resource ids and try again.",
+      409,
+    );
+  }
 };
 
 export const callMcpTool = async (
@@ -297,18 +293,24 @@ export const callMcpTool = async (
     }
     case "list_memos": {
       assertScope(auth, "read:memos");
-      return await listMemosForMcp(c.env.storage.db, {
+      const includeAllFormats = includeAllMemoFormats(args.format);
+      const includeContent = args.includeContent === true;
+      const page = await listMemosForMcp(c.env.storage.db, {
         workspaceId: auth.workspaceId,
         notebookId: getOptionalString(args.notebookId),
         limit: clampNumber(Number(args.limit ?? 50), 1, 100),
         offset: clampNumber(Number(args.offset ?? 0), 0, 100_000),
-        includeContent: args.includeContent === true,
+        includeContent,
         includeDeleted: args.includeDeleted === true,
         poster: typeof args.poster === "boolean" ? args.poster : null,
       });
+      return includeContent && !includeAllFormats
+        ? { ...page, memos: page.memos.map(projectMcpMemo) }
+        : page;
     }
     case "get_memo": {
       assertScope(auth, "read:memos");
+      const includeAllFormats = includeAllMemoFormats(args.format);
       const memoId = getRequiredString(args.memoId, "memoId");
       const memo = await getMemoDetail(c.env.storage.db, auth.workspaceId, memoId, args.includeDeleted === true);
 
@@ -327,7 +329,7 @@ export const callMcpTool = async (
           infographic: { template: infographicSyntaxTemplate(infographic.syntax) },
         };
       }
-      return { memo };
+      return { memo: includeAllFormats ? memo : projectMcpMemo(memo) };
     }
     case "get_table_records": {
       assertScope(auth, "read:memos");
@@ -460,16 +462,32 @@ export const callMcpTool = async (
       const notebookId = getRequiredString(args.notebookId, "notebookId");
       const actor = getAuditActor(c);
       const actorLabel = getActorLabel(c);
-      const memo = await createMemoRecord(c.env.storage.db, auth.workspaceId, {
+      const resourceIds = parseResourceIds(args.resourceIds) ?? [];
+      const bind = await preparePendingResourceBinding(c.env.storage.db, auth, resourceIds, actor);
+      const memo = await withBindingConflict(Boolean(bind), () => createMemoRecord(c.env.storage.db, auth.workspaceId, {
         notebookId,
         title: getOptionalString(args.title) ?? undefined,
         contentMarkdown: getOptionalString(args.contentMarkdown) ?? "",
         tags: getOptionalStringArray(args.tags),
         createdAt: getOptionalString(args.createdAt) ?? undefined,
         updatedAt: getOptionalString(args.updatedAt) ?? undefined,
-      }, actor, actorLabel);
+      }, actor, actorLabel, bind ?? undefined));
 
-      return { memo };
+      return { memo, ...(resourceIds.length ? { resources: await listResourcesForMemo(c.env.storage.db, auth.workspaceId, memo.id) } : {}) };
+    }
+    case "create_resource_upload_url": {
+      assertScope(auth, "write:resources");
+      const kind = getRequiredString(args.kind, "kind");
+      if (kind !== "image" && kind !== "attachment") {
+        throw new AppError("invalid_params", 'kind must be "image" or "attachment".', 400);
+      }
+      return await createPendingResourceUpload(c, auth, {
+        kind,
+        mimeType: getRequiredString(args.mimeType, "mimeType"),
+        filename: getOptionalString(args.filename),
+        byteSize: typeof args.byteSize === "number" ? args.byteSize : Number.NaN,
+        label: getOptionalString(args.label),
+      });
     }
     case "create_infographic_memo": {
       assertScope(auth, "write:memos");
@@ -697,7 +715,9 @@ export const callMcpTool = async (
       }
       const actor = getAuditActor(c);
       const actorLabel = getActorLabel(c);
-      const result = await updateMemoRecord(
+      const resourceIds = parseResourceIds(args.resourceIds) ?? [];
+      const bind = await preparePendingResourceBinding(c.env.storage.db, auth, resourceIds, actor);
+      const result = await withBindingConflict(Boolean(bind), () => updateMemoRecord(
         c.env.storage.db,
         auth.workspaceId,
         memoId,
@@ -715,14 +735,19 @@ export const callMcpTool = async (
           updatedAt: getOptionalString(args.updatedAt) ?? undefined,
         },
         actor,
-        actorLabel
-      );
+        actorLabel,
+        false,
+        bind ? { before: [], after: bind } : undefined,
+      ));
 
       if ("error" in result) {
         throw new Error(result.message);
       }
 
-      return { memo: result.memo };
+      return {
+        memo: result.memo,
+        ...(resourceIds.length ? { resources: await listResourcesForMemo(c.env.storage.db, auth.workspaceId, memoId) } : {}),
+      };
     }
     case "trash_memos": {
       assertScope(auth, "write:memos");

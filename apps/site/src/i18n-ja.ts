@@ -18,6 +18,7 @@ export const jaSiteCopy = {
     dockerDeploy: "Docker",
     selfHostedAlternative: "Evernote 代替",
     migration: "Evernote から移行",
+    noteMigration: "ノート移行ガイド",
     evernoteMigration: "Evernote から移行",
     memosMigration: "Memos から移行",
     notionMigration: "Notion から移行",
@@ -46,6 +47,8 @@ export const jaSiteCopy = {
     clipper: "Web Clipper",
     windows: "Windows",
     linux: "Linux",
+    migrationTitle: "他社ノートからの移行",
+    migrationSubtitle: "Evernote、Obsidian、Joplinの直接取り込みやNotion、flomoの移行に対応",
     imageAlt: "EdgeEver のプレビュー",
     badgeText:
       "💡 対応: macOS、Windows、Linux、iOS、Android、Web Clipper · ネイティブ MCP & ACP 連携 · Cloudflare 無料枠と Docker",
@@ -115,8 +118,8 @@ export const jaSiteCopy = {
     },
   },
   marquee: {
-    title: "全プラットフォーム、柔軟な導入、AI 連携",
-    subtitle: "macOS、ネイティブ iOS / Android から Docker 自前運用、発信向けコピー、Remote MCP まで。",
+    title: "ネイティブ設計、柔軟な導入、AI 連携エコシステム",
+    subtitle: "ローカル SQLite 同期や ACP / Remote MCP 連携から Docker 自前運用、発信向け整形まで。",
     items: [
       {
         tag: "macOS Desktop",
@@ -267,9 +270,9 @@ export const jaSiteCopy = {
         cta: "導入ガイドを読む",
       },
       {
-        title: "Evernote から移行する",
-        summary: "EdgeEver MCP、evernote-backup、ENEX 取り込みで、古いライブラリを自前インスタンスへ。",
-        href: "/blog/evernote-migration-guide",
+        title: "サードパーティ製ノートの移行",
+        summary: "Evernote、Obsidian、Joplin のネイティブインポート、または AI Agent (MCP) を使用した Notion、flomo、Memos の移行。",
+        href: "/blog/note-migration-guide",
         cta: "移行ガイドを読む",
       },
       {

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { formatNoteCoverTags } from "@/lib/note-cover-tags";
 import type { Editor } from "@tiptap/react";
 
 type SectionItem = {
@@ -66,27 +67,27 @@ const formatYearMonth = (iso?: string) => {
 
 export const EditorMagazineHeader = ({
   editor,
+  showMagazineCover,
+  showChapterNavigation,
   title,
   tags = [],
-  notebookName,
   updatedAt,
   palette = "native",
 }: {
   editor: Editor | null;
+  showMagazineCover: boolean;
+  showChapterNavigation: boolean;
   title?: string;
   tags?: string[];
-  notebookName?: string;
   updatedAt?: string;
   palette?: string;
 }) => {
   const isNative = !palette || palette === "native";
   const [sections, setSections] = useState<SectionItem[]>([]);
-  const [leadSummary, setLeadSummary] = useState("");
 
   useEffect(() => {
     if (!editor || editor.isDestroyed) {
       setSections([]);
-      setLeadSummary("");
       return;
     }
 
@@ -104,10 +105,6 @@ export const EditorMagazineHeader = ({
         };
       });
       setSections(nextSections);
-
-      const firstParagraph = dom.querySelector<HTMLElement>("blockquote p, p");
-      const firstText = (firstParagraph?.textContent || "").replace(/\s+/g, " ").trim();
-      setLeadSummary(firstText.slice(0, 42));
     };
 
     sync();
@@ -120,14 +117,8 @@ export const EditorMagazineHeader = ({
   }, [editor]);
 
   const { primary, highlight } = splitCoverTitle(title || "");
-  const topTag = tags.length > 0
-    ? tags.slice(0, 2).map((tag) => tag.replace(/^#/, "")).join(" · ").toUpperCase()
-    : "实测 · 深度梳理";
+  const topTag = formatNoteCoverTags(tags);
   const dateLabel = formatYearMonth(updatedAt);
-  const subtitleText = leadSummary
-    || (sections.length > 0
-      ? `${sections.length} 个核心章节，从全局脉络到关键细节完整拆解`
-      : "结构化核心脉络与实战要点梳理");
 
   const scrollToSection = (index: number) => {
     if (!editor || editor.isDestroyed) return;
@@ -135,6 +126,9 @@ export const EditorMagazineHeader = ({
     const target = h2Elements[index];
     target?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
+
+  const showNavigation = showChapterNavigation && sections.length >= 2;
+  if (!showMagazineCover && !showNavigation) return null;
 
   return (
     <div
@@ -144,8 +138,8 @@ export const EditorMagazineHeader = ({
         fontFamily: "-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif",
       }}
     >
-      {/* Component 2: Magazine cover-breaking card */}
-      <div
+      {showMagazineCover && <div
+        data-edgeever-magazine-cover="true"
         style={{
           margin: "0 0 28px",
           background: "#ffffff",
@@ -158,7 +152,7 @@ export const EditorMagazineHeader = ({
         }}
       >
         <div style={{ padding: "28px 28px 24px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "22px" }}>
+          {topTag ? <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "22px" }}>
             <span
               style={{
                 width: "6px",
@@ -170,6 +164,8 @@ export const EditorMagazineHeader = ({
             />
             <span
               style={{
+                minWidth: 0,
+                overflowWrap: "anywhere",
                 fontSize: "11px",
                 fontWeight: 700,
                 letterSpacing: "3px",
@@ -190,14 +186,14 @@ export const EditorMagazineHeader = ({
             <span style={{ fontSize: "10px", color: "#d1d5db", fontWeight: 600 }}>
               {dateLabel}
             </span>
-          </div>
+          </div> : null}
 
           <p
             style={{
               fontSize: "24px",
               fontWeight: 900,
               color: "#111827",
-              margin: "0 0 14px",
+              margin: 0,
               lineHeight: 1.18,
               letterSpacing: "-1px",
             }}
@@ -207,30 +203,6 @@ export const EditorMagazineHeader = ({
               <span style={{ color: "var(--note-palette-accent, #374151)" }}>{highlight}</span>
             ) : null}
           </p>
-
-          <div
-            style={{
-              width: "48px",
-              height: "3px",
-              background: isNative
-                ? "linear-gradient(to right, #4b5563, #9ca3af)"
-                : "linear-gradient(to right, var(--note-palette-accent, #374151), color-mix(in srgb, var(--note-palette-accent, #374151) 68%, #ffffff))",
-              borderRadius: "2px",
-              marginBottom: "12px",
-            }}
-          />
-
-          <p
-            style={{
-              fontSize: "13px",
-              color: "#9ca3af",
-              margin: 0,
-              lineHeight: 1.7,
-              letterSpacing: "0.5px",
-            }}
-          >
-            {subtitleText}
-          </p>
         </div>
 
         <div
@@ -239,62 +211,14 @@ export const EditorMagazineHeader = ({
               ? "#f3f4f6"
               : "linear-gradient(135deg, var(--note-palette-accent, #374151), color-mix(in srgb, var(--note-palette-accent, #374151) 80%, #ffffff))",
             borderTop: isNative ? "1px solid #e5e7eb" : undefined,
-            padding: "11px 28px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "12px",
+            height: "8px",
           }}
-        >
-          <span
-            style={{
-              fontSize: "12px",
-              color: isNative ? "#374151" : "rgba(255, 255, 255, 0.92)",
-              fontWeight: 600,
-              letterSpacing: "0.5px",
-            }}
-          >
-            {notebookName?.trim() || "EdgeEver 专栏"}
-          </span>
-          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            {sections.length > 0 ? (
-              <span
-                style={{
-                  background: isNative ? "#ffffff" : "rgba(255, 255, 255, 0.2)",
-                  border: isNative ? "1px solid #e5e7eb" : undefined,
-                  padding: "2px 7px",
-                  borderRadius: "4px",
-                  fontSize: "10px",
-                  color: isNative ? "#374151" : "#ffffff",
-                  fontWeight: 600,
-                }}
-              >
-                {sections.length} 个章节
-              </span>
-            ) : null}
-            {tags.slice(0, 2).map((tag) => (
-              <span
-                key={tag}
-                style={{
-                  background: isNative ? "#ffffff" : "rgba(255, 255, 255, 0.2)",
-                  border: isNative ? "1px solid #e5e7eb" : undefined,
-                  padding: "2px 7px",
-                  borderRadius: "4px",
-                  fontSize: "10px",
-                  color: isNative ? "#374151" : "#ffffff",
-                  fontWeight: 600,
-                }}
-              >
-                {tag.replace(/^#/, "")}
-              </span>
-            ))}
-          </div>
-        </div>
-      </div>
+          aria-hidden="true"
+        />
+      </div>}
 
-      {/* Component 3: Horizontal PARTS directory cards (toc-scroll) */}
-      {sections.length >= 2 ? (
-        <div style={{ margin: "0 0 28px" }}>
+      {showNavigation ? (
+        <div data-edgeever-chapter-navigation="true" style={{ margin: "0 0 28px" }}>
           <div
             style={{
               display: "flex",
@@ -315,7 +239,7 @@ export const EditorMagazineHeader = ({
               {sections.length} PARTS · 章节导览
             </span>
           </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+          <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-start", gap: "8px", width: "100%" }}>
             {sections.map((section, idx) => {
               const isHighlighted = idx < sections.length - 1;
               const useSolidAccent = isHighlighted && !isNative;
@@ -327,9 +251,11 @@ export const EditorMagazineHeader = ({
                   style={
                     useSolidAccent
                       ? {
+                          minWidth: 0,
                           width: "146px",
+                          maxWidth: "100%",
+                          flex: "0 0 auto",
                           boxSizing: "border-box",
-                          flexShrink: 0,
                           display: "flex",
                           flexDirection: "column",
                           alignItems: "stretch",
@@ -341,9 +267,11 @@ export const EditorMagazineHeader = ({
                           cursor: "pointer",
                         }
                       : {
+                          minWidth: 0,
                           width: "146px",
+                          maxWidth: "100%",
+                          flex: "0 0 auto",
                           boxSizing: "border-box",
-                          flexShrink: 0,
                           display: "flex",
                           flexDirection: "column",
                           alignItems: "stretch",

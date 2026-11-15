@@ -3,28 +3,30 @@
     <img src="assets/brand/edgeever-icon.svg" alt="EdgeEver のロゴ" width="48" align="absmiddle" /> EdgeEver
   </h1>
   <p>
-    <b>AI ネイティブ知識ベース、瞬時マルチデバイス同期＆ネイティブ MCP を備えた Evernote / Obsidian 代替ツール。Cloudflare 無料運用または Docker 自前運用</b>
+    <b>AI ネイティブ知識ベース＆ Evernote / Obsidian 代替ツール。全プラットフォーム瞬時同期、多彩なノート形式（テーブル、マインドマップ、図表、ポスター）、Web クリッパー、MCP に対応。Cloudflare で 100% 無料運用または Docker 自前運用。</b>
   </p>
   <p>
     <a href="https://github.com/tianma-if/edgeever/stargazers"><img src="https://img.shields.io/github/stars/tianma-if/edgeever?style=social" alt="GitHub Stars" /></a>
     <a href="https://github.com/tianma-if/edgeever/network/members"><img src="https://img.shields.io/github/forks/tianma-if/edgeever?style=social" alt="GitHub Forks" /></a>
-    <a href="https://github.com/tianma-if/edgeever"><img src="https://img.shields.io/badge/Git_Clones-40K%2B%20%2F%2014d-brightgreen?style=social&logo=git" alt="Git クローン数" /></a>
+    <a href="https://github.com/tianma-if/edgeever/releases"><img src="https://img.shields.io/github/downloads/tianma-if/edgeever/total?style=social&amp;logo=github&amp;label=Release%20Downloads" alt="GitHub Releases の添付ファイルのダウンロード数" /></a>
     <a href="https://github.com/tianma-if/edgeever/pkgs/container/edgeever"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fghcr-badge.elias.eu.org%2Fapi%2Ftianma-if%2Fedgeever%2Fedgeever&query=downloadCount&style=social&logo=docker&label=Docker%20Pulls" alt="Docker Pulls" /></a>
     <a href="https://www.producthunt.com/products/edgeever?utm_source=other&utm_medium=social"><img src="https://img.shields.io/badge/Product%20Hunt-ea532a?style=social&logo=product-hunt" alt="Product Hunt" /></a>
     <a href="https://hellogithub.com/repository/tianma-if/edgeever" target="_blank"><img src="https://api.hellogithub.com/v1/widgets/recommend.svg?rid=150fee4403f6433880bda91e9576ac06&claim_uid=TWNAjisURpnhL1l&theme=small" alt="Featured｜HelloGitHub" /></a>
     <a href="#スポンサーと支援"><img src="https://img.shields.io/badge/Sponsor-EdgeEver-ea4aaa?logo=github-sponsors" alt="スポンサーと支援" /></a>
   </p>
   <p>
-    <a href="README.zh-CN.md">简体中文</a> | <a href="README.zh-TW.md">繁體中文</a> | <a href="README.md">English</a> | <b>日本語</b> | <a href="README.pl-PL.md">Polski</a>
+    <a href="README.zh-CN.md">简体中文</a> | <a href="README.zh-TW.md">繁體中文</a> | <a href="README.md">English</a> | <a href="README.es.md">Español</a> | <a href="README.de.md">Deutsch</a> | <a href="README.fr.md">Français</a> | <b>日本語</b> | <a href="README.pl-PL.md">Polski</a> | <a href="README.ru.md">Русский</a>
   </p>
   <p>
     <a href="https://t.me/+GvKYnL37feUwOTNl"><img src="assets/readme/community/telegram.svg" alt="Telegram" width="16" height="16" align="absmiddle" /> Telegram グループ</a> &nbsp;|&nbsp;
     <a href="https://demo.edgeever.org">🌐 オンラインデモ</a> &nbsp;|&nbsp;
+    <a href="https://github.com/users/tianma-if/projects/1">🗺️ ロードマップ</a> &nbsp;|&nbsp;
     <a href="#全プラットフォームクライアントと拡張機能">📱 クライアントと拡張機能</a> &nbsp;|&nbsp;
-    <a href="#features">機能とワークフローマトリクス</a>
+    <a href="#features">機能とワークフローマトリクス</a> &nbsp;|&nbsp;
+    <a href="docs/note-migration-guide.md">📥 ノート移行ガイド</a>
   </p>
   <p align="center">
-    <img src="assets/readme/edgeever-hero-v6.png" alt="EdgeEver ワークスペースプレビュー" width="800" />
+    <img src="assets/readme/edgeever-hero-v8-en.png" alt="EdgeEver ワークスペースプレビュー" width="800" />
   </p>
 </div>
 
@@ -85,12 +87,12 @@ EdgeEver は、オープンソースのノートと知識ベースの作業領�
 
 | モジュール | 基本機能 | 高度な機能 |
 | :--- | :--- | :--- |
-| **執筆と編集** | • 画面幅を自由に調節できる伝統的な 3 ペイン構成<br>• リッチテキスト（WYSIWYG）と Markdown ソース表示の切り替え<br>• コードハイライト、数式、タスクリスト、集中モード<br>• 秒単位の自動保存・マルチ端末瞬時同期・履歴リビジョン管理 | • **ネイティブポスターノート**：キャンバスベースの洗練されたビジュアルカード、ダブルクリックで即編集<br>• **微信公式アカウント整形**：インライン CSS 付与で直接貼り付け可能<br>• **高画質ポスター画像共有**：テーマ選択、モノグラムアバター対応、MD/HTML/PDF 書き出し |
-| **整理と検索** | • 無制限階層のノートブックとフォルダツリー<br>• タグシステム、ドラッグ＆ドロップ並べ替え、一括結合・移動<br>• ミリ秒単位のインクリメンタル全文検索とフィルタ | • **独立した知識ベースサイト公開**：ノートブック全体をツリーナビゲーション付きの静的 Web サイトとしてワンクリック公開（パスワード保護対応）<br>• マルチアカウント・複数ワークスペースの物理分離 |
-| **収集とメディア** | • デスクトップ・モバイルでの各種添付ファイル（PDF、Office、音声・動画など）保存<br>• ブラウザ拡張によるテキスト・画像の選択クリップ<br>• スマホの共有メニューから画像や Web 記事を即時保存 | • **高度な構造化クリッピング**：小紅書、X (Twitter)、知乎、Reddit、GitHub、YouTube、Bilibili など 20 以上の主要サービスに対応<br>• **微信チャット履歴の取り込み**：タイムライン、発言者、引用、スタンプ、メディアを完全保持<br>• **クライアント側自動圧縮**：画像アップロード時に 50%〜90% 自動軽量化；最大 1 GiB の分割ストリーミングアップロード対応 |
+| **執筆と編集** | • 画面幅を自由に調節できる伝統的な 3 ペイン構成<br>• リッチテキスト（WYSIWYG）と Markdown ソース表示の切り替え<br>• コードハイライト、数式、タスクリスト、集中モード<br>• 秒単位の自動保存・マルチ端末瞬時同期・履歴リビジョン管理 | • **ネイティブポスターノート**：キャンバスベースの洗練されたビジュアルカード、ダブルクリックで即編集<br>• **微信公式アカウント整形**：インライン CSS 付与で直接貼り付け可能<br>• **高画質ポスター画像共有**：テーマ選択、モノグラムアバター対応、MD/HTML/PDF 書き出し<br>• **デスクトップ効率化ツール**：グローバルショートカットによる範囲スクリーンショット保存、外部アプリ編集添付の自動書き戻し、複数ウィンドウ独立編集に対応 |
+| **整理と検索** | • 無制限階層のノートブックとフォルダツリー<br>• タグシステム、ドラッグ＆ドロップ並べ替え、一括結合・移動<br>• ミリ秒単位のインクリメンタル全文検索とフィルタ | • **独立した知識ベースサイト公開**：ノートブック全体をツリーナビゲーション付きの静的 Web サイトとしてワンクリック公開（パスワード保護対応）<br>• **サードパーティからのワンクリック移行**：GUI から flomo、Evernote、Obsidian、Joplin のノート・階層・添付ファイルを一括インポート<br>• マルチアカウント・複数ワークスペースの物理分離 |
+| **収集とメディア** | • デスクトップ・モバイルでの各種添付ファイル（PDF、Office、音声・動画など）保存<br>• ブラウザ拡張によるテキスト・画像の選択クリップ<br>• スマホの共有メニューから画像や Web 記事を即時保存 | • **高度な構造化クリッピング**：小紅書、X (Twitter)、知乎、Reddit、GitHub、YouTube、Bilibili など 20 以上の主要サービスに対応<br>• **微信チャット履歴の取り込み**：タイムライン、発言者、引用、スタンプ、メディアを完全保持<br>• **クライアント側自動圧縮**：画像アップロード時に 50%〜90% 自動軽量化；最大 1 GiB の分割ストリーミングアップロード対応<br>• **OSS オブジェクトストレージ＆デスクトップ画像ホスティング**：インスタンス単位で S3 互換ストレージに対応；デスクトップでは PicGo / PicList や CloudFlare ImgBed への直接アップロードに対応 |
 | **データと可視化** | • ネイティブ表編集と Markdown テーブル描画<br>• Mermaid 記法によるフローチャート・シーケンス図・構成図の直接描画 | • **AI 多次元テーブル**：プロンプトからタグや日付などの列型を備えた業務テーブルを自動生成<br>• **一般公開集計フォーム**：ログイン不要の Web フォームを発行し、回答をリアルタイムでテーブルへ集約<br>• **AI インフォグラフィック生成**：タイムライン、比較図、マトリクス、マインドマップを自動生成 |
-| **AI とエコシステム** | • サイドバーの伴走型 AI アシスタント（要約、校正、翻訳、推敲）<br>• BYOK（独自 API キー）：OpenAI、Anthropic、Gemini 互換プロトコル対応 | • **ネイティブ Agent プロトコル連携**：外部 Agent が読み書きできる MCP、Codex、Claude Code、CodeBuddy などのローカル Agent を直接呼び出す ACP を標準搭載<br>• **AI RSS 購読日報**：フィードを自動収集し、AI がノイズを排除して構造化日報を作成<br>• 自由な拡張を可能にするプラグイン開発 API |
-| **マルチ端末同期と基盤** | • PC・スマホ・タブレット間で低遅延・シームレスに同期、接続端末数無制限<br>• Web、macOS、Windows、Linux、iOS、Android の全プラットフォーム公式対応<br>• オフラインファーストと自動同期キュー：オフラインでも軽快に執筆、再接続時に自動増分同期<br>• 標準 SQLite、可逆 ZIP アーカイブ・Markdown の入出力に対応 | • **生涯サーバー代ゼロ**：Cloudflare の無料枠で 100% 稼働（短文約 15 万件＋画像約 5 万枚）<br>• **自由な Docker セルフホスト**：自宅サーバー・VPS・NAS にワンクリック配置、数百万件規模の高速同期に対応<br>• サーバー側ブルートフォース保護とセキュリティ隔離 |
+| **AI とエコシステム** | • サイドバーの伴走型 AI アシスタント（要約、校正、翻訳、推敲）<br>• BYOK（独自 API キー）：OpenAI、Anthropic、Gemini 互換プロトコル対応 | • **ネイティブ Agent プロトコル連携**：外部 Agent が読み書きできる MCP、Codex、Claude Code、CodeBuddy などのローカル Agent を直接呼び出す ACP を標準搭載<br>• **AI 音声・動画文字起こし**：クライアント側で音声トラックを抽出・分割し、OpenAI 互換音声モデルに直接接続してテキスト化しノートへ挿入<br>• **オープンなプラグイン API とテーマエコシステム**：マーケットや GitHub からワンクリック導入・端末間同期に対応；ノートの読み書きやエディタ連携、独自パネル・コマンド拡張、AI 呼び出し、デスクトップ定期実行、ノーコードテーマ設定が可能 |
+| **マルチ端末同期と基盤** | • PC・スマホ・タブレット間で低遅延・シームレスに同期、接続端末数無制限<br>• Web、macOS、Windows、Linux、iOS、Android の全プラットフォーム公式対応<br>• オフラインファーストと自動同期キュー：オフラインでも軽快に執筆、再接続時に自動増分同期<br>• 標準 SQLite、可逆 ZIP アーカイブ・Markdown の入出力に対応 | • **生涯サーバー代ゼロ**：Cloudflare の無料枠で 100% 稼働（短文約 15 万件＋画像約 5 万枚）<br>• **自由な Docker セルフホスト**：自宅サーバー・VPS・NAS にワンクリック配置、数百万件規模の高速同期に対応<br>• **デスクトップ自動バックアップ**：定期ローカル自動バックアップ（複数世代保持・任意パスワード暗号化）と WebDAV への自動オフサイト複製に対応<br>• サーバー側ブルートフォース保護、TOTP 二段階認証（2FA）、ログイン端末セッション管理、データ隔離による強固なセキュリティ |
 
 ## 導入
 
@@ -112,7 +114,7 @@ GitHub と Cloudflare のオンライン操作だけで EdgeEver を導入して
    （32 文字以上を推奨）。管理者ユーザー名の既定値は `admin` です。
 5. Secret のデプロイ後、同じ Worker の Settings → Builds → Connect で Fork の
    `main` ブランチに接続します。
-6. Settings → Builds → API token でデプロイ用の Cloudflare API トークンを選択または作成し、対象アカウントの D1 読み取り・編集権限を確認します。
+6. 同じ Worker の Settings → Builds → API token でデプロイ用の Cloudflare API トークンを選択または作成し、対象アカウントの D1 読み取り・編集権限を確認します。
 7. Fork の GitHub リポジトリで Actions → Update deployed EdgeEver を開き、必要に応じて有効化して、
    `main` ブランチで Run workflow を選択します。Cloudflare で対応するビルドの成功とデプロイの完了を確認してから、`/api/health` と
    `/api/openapi.json` を確認し、管理者ユーザー名とパスワードでログインを検証します。
@@ -133,7 +135,7 @@ GitHub と Cloudflare のオンライン操作だけで EdgeEver を導入して
 3. **Worker を作成**：Cloudflare Workers & Pages で Create application → Start with Hello World! を選び、`edgeever` という名前でデプロイします。これは仮のサービスで、EdgeEver は手順 7 でデプロイします。
 4. **管理者パスワードを設定**：Worker の Settings → Variables and Secrets で Secret 型の `EDGE_EVER_AUTH_PASSWORD` を追加し、Deploy を選択します。値はログインパスワードで、32 文字以上を推奨します。完了後に Fork へ接続します。
 5. **Fork に接続**：既存 Worker の Settings → Builds → Connect で Fork と本番ブランチ `main` を選びます。
-6. **デプロイ権限を設定**：Settings → Builds → API token でデプロイ用の Cloudflare API トークンを選択または作成し、対象アカウントの D1 読み取り・編集権限を確認します。
+6. **デプロイ権限を設定**：同じ Worker の Settings → Builds → API token でデプロイ用の Cloudflare API トークンを選択または作成し、対象アカウントの D1 読み取り・編集権限を確認します。
 7. **ビルドと確認**：Fork の GitHub リポジトリで Actions → Update deployed EdgeEver を開き、必要に応じて有効化して、 `main` ブランチで Run workflow を選択します。Cloudflare で対応するビルドの成功とデプロイの完了を確認してから、 `/api/health` が `200` を返すこととログインを確認します。以後、このワークフローが安定版と修正を自動で同期します。
 
 > 📖 手順と設定の詳細は [Online Deployment Guide](docs/deploy-cloudflare-button.md) を見てください。
@@ -174,15 +176,14 @@ curl -fsSL https://edgeever.org/install.sh | bash
 日常のバックアップ、インスタンス間のスムーズな移行、既存のノートアプリからの乗り換えなど、EdgeEver は信頼性の高い完全なデータ流通を提供します：
 
 - **EdgeEver ネイティブのバックアップと復元**：アプリ内の **プロフィール** -> **インポートとエクスポート** から、いつでも EdgeEver ZIP アーカイブを書き出し、または取り込めます。解凍後の `notes/` ディレクトリには Markdown ファイルと添付がそのまま保持され、ローカル保管や直接閲覧に利用できます。内部の構造化メタデータにより、異なる EdgeEver インスタンス間でも無劣化で完全復元が可能です。取り込み時は無関係な既存データを残し、同一 ID のノートを自動で上書き更新します。
-- **サードパーティ製ノートからのスムーズな移行**：
-  - **Evernote からの移行**: [docs/evernote-migration-guide.md](docs/evernote-migration-guide.md)
-  - **flomo からの移行**: [docs/flomo-migration-guide.md](docs/flomo-migration-guide.md)
-  - **Memos からの移行**: [docs/memos-migration-guide.md](docs/memos-migration-guide.md)
-  - **Notion からの移行**: [docs/notion-migration-guide.md](docs/notion-migration-guide.md)
+- **デスクトップ版の定期自動バックアップとオフサイト複製**：デスクトップアプリの **バックアップとインポート** 設定からローカル定期自動バックアップを有効化でき、保存先フォルダ・頻度（毎週 / 毎月）・世代保持数を指定して、内容変更時に標準 ZIP または暗号化 `.edgeever.enc` アーカイブを自動作成できます。各ローカルバックアップ完了後に NAS や対応ストレージへ WebDAV で自動アップロードすることも可能です。
+- **サードパーティ製ノートからのスムーズな移行**：Web / デスクトップ版のネイティブなワンクリックインポート（Evernote、Obsidian、Joplin のノート、階層、添付に完全対応）から、AI Agent (MCP) による Notion、flomo、Memos などの移行まで、EdgeEver はシームレスで検証可能なデータ移行を提供します。詳細は [サードパーティ製ノート移行ガイド](docs/note-migration-guide.md) を参照してください。
 
 ### AI と MCP プロトコル連携
 
 **プロフィール** -> **API / MCP** で API トークンを作成し、ワンクリックで Remote MCP 設定をコピーすることで、Claude Code、Cursor、Antigravity、OpenClaw などの AI Agent がアカウント権限の範囲内で知識ベースを安全に管理できます。テキストノート、図のノート（マインドマップ、フローチャート、アーキテクチャ図）、多次元テーブルノート、ネイティブポスターノートの完全な CRUD に対応し、Agent はノートブック階層、タグ、添付ファイル、履歴バージョン、ノートテンプレート、AI 指示の管理も行えます。
+
+クライアントの設定、トークンの権限、トラブルシューティング、エージェント向けルールの例は [Using EdgeEver with MCP clients](docs/mcp-guide.md)（英語）を参照してください。
 
 > 💡 **着想：**
 > AI を知識の整理役と創作の相棒にしてください。構想をインタラクティブなマインドマップ、フローチャート、アーキテクチャ図、多次元テーブルへ瞬時に落とし込み、Agent に私有の文脈を渡せます。EdgeEver のリッチテキストと美しい体裁と組み合わせることで、AI が手伝った内容は、整った、いつでも配布できる高品質な知識資産になります。
@@ -197,7 +198,7 @@ curl -fsSL https://edgeever.org/install.sh | bash
 
 - **OSS オブジェクトストレージ**：インスタンスのオーナーは **設定 → 詳細 → OSS オブジェクトストレージ** で S3 互換ストレージを設定できます。切り替えは既存添付を移さず、影響しません。
 - **デスクトップ版 PicGo 連携**：デスクトップ版は、このパソコンまたは信頼できる別のマシン（NAS など）の PicGo / PicList に挿入画像を渡し、GitHub、SM.MS、又拍雲、七牛雲や自前ホストへアップロードできます。アドレスは `/upload` で終われば良いので、リバースプロキシ配下の PicList も使えます。
-- **デスクトップ版 CloudFlare ImgBed 連携**：デスクトップ版は、API トークンを使って挿入画像を自前の [CloudFlare ImgBed](https://github.com/MarSeventh/CloudFlare-ImgBed) に直接アップロードすることもできます。アップロード先フォルダーには `{Y}/{m}/{d}` や `{memoId}` など PicList 形式のプレースホルダーを使えます。
+- **デスクトップ・Web 版 CloudFlare ImgBed**：API トークンで挿入画像を自前の [CloudFlare ImgBed](https://github.com/MarSeventh/CloudFlare-ImgBed) に直接アップロードできます。フォルダーは `{Y}/{m}/{d}` や `{memoId}` に対応します。Web 版では HTTPS と、EdgeEver のオリジンおよび `Authorization` ヘッダーを許可する CORS 設定が必要です。認証情報は現在のブラウザーまたはデスクトップアプリ内に保存されます。画像は EdgeEver のバックアップ対象外です。
 
 ### プラグインとカスタムテーマ
 
@@ -335,12 +336,14 @@ EdgeEver はセルフホスト型ソフトウェアです。公式デモを除�
   <a href="https://github.com/Crowszzz"><img src="https://images.weserv.nl/?url=https://avatars.githubusercontent.com/u/75199133?v=4&h=96&w=96&fit=cover&mask=circle&maxage=7d" width="48" height="48" alt="@Crowszzz" /></a>
   <a href="https://github.com/CottonChou"><img src="https://images.weserv.nl/?url=https://avatars.githubusercontent.com/u/17818375?v=4&h=96&w=96&fit=cover&mask=circle&maxage=7d" width="48" height="48" alt="@CottonChou" /></a>
   <a href="https://github.com/Z-DDV"><img src="https://images.weserv.nl/?url=https://avatars.githubusercontent.com/u/122068983?v=4&h=96&w=96&fit=cover&mask=circle&maxage=7d" width="48" height="48" alt="@Z-DDV" /></a>
+  <a href="https://github.com/DavidPivert"><img src="https://images.weserv.nl/?url=https://avatars.githubusercontent.com/u/61420909?v=4&h=96&w=96&fit=cover&mask=circle&maxage=7d" width="48" height="48" alt="@DavidPivert" /></a>
   <a href="https://github.com/0xfelixli"><img src="https://images.weserv.nl/?url=https://avatars.githubusercontent.com/u/81979996?v=4&h=96&w=96&fit=cover&mask=circle&maxage=7d" width="48" height="48" alt="@0xfelixli" /></a>
   <a href="https://github.com/Sergmay911"><img src="https://images.weserv.nl/?url=https://avatars.githubusercontent.com/u/304439776?v=4&h=96&w=96&fit=cover&mask=circle&maxage=7d" width="48" height="48" alt="@Sergmay911" /></a>
   <a href="https://github.com/X77seven"><img src="https://images.weserv.nl/?url=https://avatars.githubusercontent.com/u/171017641?v=4&h=96&w=96&fit=cover&mask=circle&maxage=7d" width="48" height="48" alt="@X77seven" /></a>
   <a href="https://github.com/imgdown"><img src="https://images.weserv.nl/?url=https://avatars.githubusercontent.com/u/348032096?v=4&h=96&w=96&fit=cover&mask=circle&maxage=7d" width="48" height="48" alt="@imgdown" /></a>
   <a href="https://github.com/mookim-eth"><img src="https://images.weserv.nl/?url=https://avatars.githubusercontent.com/u/97934198?v=4&h=96&w=96&fit=cover&mask=circle&maxage=7d" width="48" height="48" alt="@mookim-eth" /></a>
   <a href="https://github.com/nzhdotme"><img src="https://images.weserv.nl/?url=https://avatars.githubusercontent.com/u/9588882?v=4&h=96&w=96&fit=cover&mask=circle&maxage=7d" width="48" height="48" alt="@nzhdotme" /></a>
+  <a href="https://github.com/tankle0"><img src="https://images.weserv.nl/?url=https://avatars.githubusercontent.com/u/63094764?v=4&h=96&w=96&fit=cover&mask=circle&maxage=7d" width="48" height="48" alt="@tankle0" /></a>
   <a href="https://github.com/Shunamxiao"><img src="https://images.weserv.nl/?url=https://avatars.githubusercontent.com/u/92215296?v=4&h=96&w=96&fit=cover&mask=circle&maxage=7d" width="48" height="48" alt="@Shunamxiao" /></a>
 </p>
 <!-- readme-contributors:end -->
